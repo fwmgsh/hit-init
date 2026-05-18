@@ -1,0 +1,2463 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Hit Init</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(ellipse at top, #0a1740 0%, #03081d 100%);
+    font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Trebuchet MS', sans-serif;
+    color: #fff7e6;
+    overflow: hidden;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+
+  /* ----- stage sizes per active screen aspect -----
+     title:  1024 x 602   (1.701)
+     play:   1024 x 934   (1024 + 0 ; game 474 + roll 460)
+  */
+  /* Stage scales up to the artwork's native 1024-px width — the largest
+     size where each art pixel maps 1:1 to a CSS pixel (no upscaling).
+     Below that it stays responsive via min(100vw, …). */
+  #stage {
+    position: relative;
+    width: min(100vw, calc(100vh * (1024/934)));
+    height: min(100vh, calc(100vw * (934/1024)));
+    max-width: 1024px;
+    max-height: calc(1024px * 934 / 1024);   /* = 934px */
+    background: transparent;
+    overflow: hidden;
+  }
+  #stage.is-title {
+    width: min(100vw, calc(100vh * (1024/602)));
+    height: min(100vh, calc(100vw * (602/1024)));
+    max-width: 1024px;
+    max-height: calc(1024px * 602 / 1024);   /* = 602px */
+  }
+
+  .screen {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .screen.hidden { display: none !important; }
+
+  /* ============== TITLE ============== */
+  #title-screen .bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+  }
+
+  /* 1P START button: transparent overlay on the gold button area
+     Calibrated against v2_title.png (1024×602): button gold spans
+     x 36–64%, y 64–83%. Hit area extended slightly for forgiving touch. */
+  .start-btn {
+    position: absolute;
+    left: 34%;
+    top: 62%;
+    width: 32%;
+    height: 22%;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    border-radius: 22px;
+    transition: transform .15s ease, filter .15s ease;
+  }
+  .start-btn::after {
+    content: '';
+    position: absolute; inset: 0;
+    border-radius: 22px;
+    box-shadow: 0 0 0 0 rgba(253,224,71,0);
+    transition: box-shadow .25s ease;
+  }
+  .start-btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
+  .start-btn:hover::after { box-shadow: 0 0 24px 4px rgba(253,224,71,0.55); }
+  .start-btn:active { transform: translateY(2px); }
+  .start-btn:focus { outline: none; }
+  .start-btn:focus::after { box-shadow: 0 0 0 4px rgba(253,224,71,0.85); }
+
+  /* WALLET CONNECT overlay (calibrated to the dark button at bottom-left) */
+  .wallet-btn {
+    position: absolute;
+    left: 4%;
+    top: 80%;
+    width: 22%;
+    height: 17%;
+    background: transparent;
+    border: 0;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: filter .15s ease, transform .15s ease;
+  }
+  .wallet-btn::after {
+    content: '';
+    position: absolute; inset: 0;
+    border-radius: 14px;
+    box-shadow: 0 0 0 0 rgba(76,196,255,0);
+    transition: box-shadow .25s;
+  }
+  .wallet-btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
+  .wallet-btn:hover::after { box-shadow: 0 0 18px 3px rgba(76,196,255,0.55); }
+  .wallet-btn:focus { outline: none; }
+  .wallet-btn:focus::after { box-shadow: 0 0 0 3px rgba(76,196,255,0.85); }
+
+  /* Coin display — sized to cover ONLY the artwork's "COIN: 1 / BUY COIN"
+     row (lower-right of the title). Compact panel: CI logo + 2-decimal num. */
+  .coin-display {
+    position: absolute;
+    left: 66%;          /* further right; right edge sits ~99% */
+    top: 84%;
+    width: 33.3%;       /* unchanged */
+    height: 13%;
+    background: #021227;
+    border: 2px solid #fbbf24;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 8px;
+    pointer-events: none;
+    z-index: 6;
+  }
+  .coin-display .coin-icon {
+    width: clamp(20px, 5vw, 60px);
+    height: clamp(20px, 5vw, 60px);
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6))
+            drop-shadow(0 0 6px rgba(253,224,71,0.5));
+  }
+  .coin-display .coin-amount {
+    color: #fde047;
+    font-family: 'Trebuchet MS', 'Helvetica', sans-serif;
+    font-weight: 900;
+    font-size: clamp(13px, 3.4vw, 40px);
+    letter-spacing: 0.04em;
+    text-shadow: 0 1px 0 #92400e, 0 0 6px rgba(253,224,71,0.4);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* "Connected as <name>" pill on title (only when connected) */
+  .wallet-pill {
+    position: absolute;
+    left: 4%;
+    top: 76%;
+    background: rgba(8, 24, 48, 0.92);
+    color: #7af0a0;
+    border: 1px solid #3a7a4e;
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: clamp(9px, 1.6vw, 18px);
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+    display: none;
+    z-index: 6;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+    white-space: nowrap;
+  }
+  .wallet-pill.show { display: block; }
+
+
+  .start-hint {
+    position: absolute;
+    left: 50%;
+    top: 76%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.85);
+    font-size: clamp(10px, 2.0vw, 12px);
+    letter-spacing: 0.06em;
+    pointer-events: none;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+    background: rgba(0,0,0,0.4);
+    padding: 3px 9px;
+    border-radius: 999px;
+  }
+
+  /* ============== PLAY ============== */
+  #play-screen { background: #03081d; }
+  .play-stack {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .play-stack > img {
+    width: 100%;
+    display: block;
+    flex-shrink: 0;
+    pointer-events: none;
+  }
+
+  /* SCORE panel — narrower & taller so the digits and label both fit
+     comfortably inside the gold-bordered box. */
+  .score-panel {
+    position: absolute;
+    left: 2.0%;
+    top: 1.1%;
+    width: 17.6%;        /* 10% wider than before */
+    height: 12.0%;
+    background: #021227;
+    border: 3px solid #fbbf24;
+    border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 4px;
+    z-index: 5;
+  }
+  .score-panel .label {
+    color: #fde047;
+    font-weight: 900;
+    font-size: clamp(8px, 1.7vw, 22px);
+    letter-spacing: 0.16em;
+    line-height: 1;
+    text-shadow: 0 1px 0 #1f2937;
+  }
+  .score-panel .value {
+    font-family: 'Trebuchet MS', 'Helvetica', sans-serif;
+    color: #fde047;
+    font-weight: 900;
+    font-size: clamp(15px, 3.6vw, 50px);
+    line-height: 1;
+    margin-top: 4px;
+    text-shadow: 0 2px 0 #92400e, 0 0 10px rgba(253,224,71,0.4);
+    letter-spacing: 0.04em;
+  }
+
+  /* Right HUD: ONE solid panel that fully covers INNING + BASES + OUTS.
+     Background is opaque dark navy with thin internal dividers, so no
+     piece of the underlying artwork bleeds through. */
+  .hud-right {
+    position: absolute;
+    left: 77.5%;
+    top: 0.9%;
+    width: 21.5%;
+    height: 49.0%;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .hud-panel-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    display: block;
+    user-select: none;
+  }
+  .hud-inning-text {
+    /* Positioned over the empty INNING slot of hud_b011_o2.png.
+       Panel internal layout: INNING label ~5-10%, empty area ~12-22%. */
+    position: absolute;
+    left: 50%;
+    top: 16%;
+    transform: translate(-50%, -50%);
+    font-family: 'Trebuchet MS', 'Helvetica', sans-serif;
+    font-weight: 900;
+    line-height: 1;
+    color: #fff;
+    font-size: clamp(18px, 4.2vw, 46px);
+    text-shadow: 0 2px 0 #1f2937, 0 0 10px rgba(255,255,255,0.5);
+    z-index: 6;
+    pointer-events: none;
+  }
+  .hud-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 6px;
+    flex-shrink: 0;
+    background: transparent;
+  }
+  .hud-section + .hud-section {
+    border-top: 1px solid rgba(253, 224, 71, 0.35);
+  }
+  .hud-section .label {
+    color: #fde047;
+    font-weight: 900;
+    font-size: clamp(10px, 2.0vw, 22px);
+    letter-spacing: 0.16em;
+    text-shadow: 0 1px 0 #1f2937;
+    line-height: 1;
+  }
+  .hud-section .value {
+    font-family: 'Trebuchet MS', 'Helvetica', sans-serif;
+    font-weight: 900;
+    line-height: 1;
+    margin-top: 6px;
+  }
+  .hud-section.inning { flex: 0 0 18%; }
+  .hud-section.inning .value {
+    font-size: clamp(20px, 5.0vw, 56px);
+    color: #fff;
+    text-shadow: 0 2px 0 #1f2937, 0 0 10px rgba(255,255,255,0.5);
+  }
+  .hud-section.bases  { flex: 1 1 56%; padding: 6px; }
+  .hud-section.outs   { flex: 0 0 22%; padding: 6px; }
+
+  .diamond {
+    position: relative;
+    width: 78%;
+    aspect-ratio: 1/1;
+    margin-top: 3px;
+  }
+  .diamond .b {
+    position: absolute;
+    width: 32%;
+    aspect-ratio: 1/1;
+    transform: rotate(45deg);
+    border-radius: 5px;
+    background: #1c2c45;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 1px 2px rgba(0,0,0,0.6);
+    transition: background 0.25s, box-shadow 0.25s;
+  }
+  .diamond .b.first  { right: 0;  top: 50%; transform: translateY(-50%) rotate(45deg); }
+  .diamond .b.second { left: 50%; top: 0;   transform: translateX(-50%) rotate(45deg); }
+  .diamond .b.third  { left: 0;  top: 50%;  transform: translateY(-50%) rotate(45deg); }
+  .diamond .b.home   { left: 50%; bottom: 0; transform: translate(-50%, 0) rotate(45deg); width: 22%; background: #efe3c8; }
+  .diamond .b.lit {
+    background: linear-gradient(135deg, #fde047 0%, #f97316 100%);
+    box-shadow: 0 0 12px rgba(253,224,71,0.95), 0 0 22px rgba(255,165,0,0.65);
+  }
+
+  .hud-section.outs .dots {
+    display: flex;
+    gap: clamp(6px, 1.4vw, 14px);
+    margin-top: 6px;
+    justify-content: center;
+    align-items: center;
+  }
+  .hud-section.outs .dots .dot {
+    width:  clamp(12px, 2.6vw, 28px);
+    height: clamp(12px, 2.6vw, 28px);
+    border-radius: 50%;
+    background: #0c1a2a;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.7);
+  }
+  .hud-section.outs .dots .dot.lit {
+    background: #ef4444;
+    box-shadow: 0 0 10px #ef4444, 0 0 18px rgba(255,107,107,0.7);
+  }
+  .hud-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 6px;
+    flex-shrink: 0;
+    background: transparent;
+  }
+  .hud-section + .hud-section {
+    border-top: 1px solid rgba(253, 224, 71, 0.35);
+  }
+  .hud-section .label {
+    color: #fde047;
+    font-weight: 900;
+    font-size: clamp(10px, 2.0vw, 22px);
+    letter-spacing: 0.16em;
+    text-shadow: 0 1px 0 #1f2937;
+    line-height: 1;
+  }
+  .hud-section .value {
+    font-family: 'Trebuchet MS', 'Helvetica', sans-serif;
+    font-weight: 900;
+    line-height: 1;
+    margin-top: 6px;
+  }
+  .hud-section.inning { flex: 0 0 18%; }
+  .hud-section.inning .value {
+    font-size: clamp(20px, 5.0vw, 56px);
+    color: #fff;
+    text-shadow: 0 2px 0 #1f2937, 0 0 10px rgba(255,255,255,0.5);
+  }
+  .hud-section.bases  { flex: 1 1 56%; padding: 6px; }
+  .hud-section.outs   { flex: 0 0 22%; padding: 6px; }
+
+  .diamond {
+    position: relative;
+    width: 78%;
+    aspect-ratio: 1/1;
+    margin-top: 3px;
+  }
+  .diamond .b {
+    position: absolute;
+    width: 32%;
+    aspect-ratio: 1/1;
+    transform: rotate(45deg);
+    border-radius: 5px;
+    background: #1c2c45;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 1px 2px rgba(0,0,0,0.6);
+    transition: background 0.25s, box-shadow 0.25s;
+  }
+  .diamond .b.first  { right: 0;  top: 50%; transform: translateY(-50%) rotate(45deg); }
+  .diamond .b.second { left: 50%; top: 0;   transform: translateX(-50%) rotate(45deg); }
+  .diamond .b.third  { left: 0;  top: 50%;  transform: translateY(-50%) rotate(45deg); }
+  .diamond .b.home   { left: 50%; bottom: 0; transform: translate(-50%, 0) rotate(45deg); width: 22%; background: #efe3c8; }
+  .diamond .b.lit {
+    background: linear-gradient(135deg, #fde047 0%, #f97316 100%);
+    box-shadow: 0 0 12px rgba(253,224,71,0.95), 0 0 22px rgba(255,165,0,0.65);
+  }
+
+  .hud-section.outs .dots {
+    display: flex;
+    gap: clamp(6px, 1.4vw, 14px);
+    margin-top: 6px;
+    justify-content: center;
+    align-items: center;
+  }
+  .hud-section.outs .dots .dot {
+    width:  clamp(12px, 2.6vw, 28px);
+    height: clamp(12px, 2.6vw, 28px);
+    border-radius: 50%;
+    background: #0c1a2a;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.7);
+  }
+  .hud-section.outs .dots .dot.lit {
+    background: #ef4444;
+    box-shadow: 0 0 10px #ef4444, 0 0 18px rgba(255,107,107,0.7);
+  }
+
+  /* canvas overlay for animations */
+  #fx {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 4;
+  }
+
+  /* Quality chip */
+  .quality-chip {
+    position: absolute;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: clamp(8px, 1.8vw, 18px) clamp(22px, 4.8vw, 48px);
+    border-radius: 999px;
+    font-size: clamp(16px, 4.6vw, 60px);
+    font-weight: 900;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 7;
+    text-shadow: 0 2px 0 rgba(0,0,0,0.4);
+    white-space: nowrap;
+  }
+  .quality-chip.show { animation: chipFlash 0.7s ease-out forwards; }
+  @keyframes chipFlash {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+    25%  { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+    55%  { transform: translate(-50%, -50%) scale(1.0); }
+    100% { opacity: 0; transform: translate(-50%, -85%) scale(1.0); }
+  }
+  .quality-chip.q-perfect { background: linear-gradient(135deg, #fde047, #f59e0b); color: #1f2937; box-shadow: 0 0 22px rgba(253,224,71,0.8); }
+  .quality-chip.q-cool    { background: linear-gradient(135deg, #4cc4ff, #2563eb); color: #fff; box-shadow: 0 0 22px rgba(76,196,255,0.7); }
+  .quality-chip.q-miss    { background: linear-gradient(135deg, #ef4444, #b91c1c); color: #fff; box-shadow: 0 0 22px rgba(239,68,68,0.7); }
+
+  /* result banner */
+  .result-banner {
+    position: absolute;
+    left: 50%;
+    top: 32%;
+    transform: translate(-50%, -50%) scale(0.5);
+    padding: clamp(12px, 2.4vw, 22px) clamp(26px, 5vw, 48px);
+    background: rgba(11, 28, 79, 0.92);
+    border: 4px solid #fde047;
+    border-radius: 16px;
+    font-weight: 900;
+    font-size: clamp(20px, 5.5vw, 72px);
+    color: #fde047;
+    text-shadow: 0 2px 0 #1f2937, 0 0 18px rgba(253,224,71,0.8);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 9;
+    white-space: nowrap;
+  }
+  .result-banner.show { animation: resultPop 1.3s ease-out forwards; }
+  /* Home-run banner stays on screen longer and is bigger */
+  .result-banner.hr {
+    background: linear-gradient(180deg, #ff7a45 0%, #c2410c 100%);
+    border-color: #fde047;
+    color: #fff;
+    text-shadow: 0 3px 0 #7c2d12, 0 0 22px rgba(255,200,80,0.95);
+    font-size: clamp(26px, 7.5vw, 100px);
+    padding: clamp(14px, 3vw, 28px) clamp(26px, 5vw, 56px);
+    border-width: 5px;
+  }
+  .result-banner.hr.show { animation: hrPop 2.6s ease-out forwards; }
+  @keyframes resultPop {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.4) rotate(-6deg); }
+    18%  { opacity: 1; transform: translate(-50%, -50%) scale(1.18) rotate(2deg); }
+    34%  { transform: translate(-50%, -50%) scale(0.95) rotate(-2deg); }
+    50%  { transform: translate(-50%, -50%) scale(1.0) rotate(0deg); }
+    85%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -55%) scale(1.05); }
+  }
+  @keyframes hrPop {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.3) rotate(-12deg); }
+    12%  { opacity: 1; transform: translate(-50%, -50%) scale(1.35) rotate(6deg); }
+    22%  { transform: translate(-50%, -50%) scale(0.95) rotate(-4deg); }
+    32%  { transform: translate(-50%, -50%) scale(1.15) rotate(2deg); }
+    44%  { transform: translate(-50%, -50%) scale(1.0) rotate(0deg); }
+    60%  { transform: translate(-50%, -50%) scale(1.06) rotate(-1deg); }
+    78%  { transform: translate(-50%, -50%) scale(1.0) rotate(0deg); }
+    92%  { opacity: 1; transform: translate(-50%, -50%) scale(1.0); }
+    100% { opacity: 0; transform: translate(-50%, -60%) scale(1.1); }
+  }
+
+  /* SCORE flash — fires on each tick of the count-up. Hard red flash with
+     scale + rotate "shake" so the player can't miss the score going up. */
+  .score-panel.score-up {
+    animation: scoreUpPanel 0.55s cubic-bezier(.36,.07,.19,.97);
+  }
+  .score-panel.score-up .value {
+    animation: scoreUpDigits 0.55s cubic-bezier(.36,.07,.19,.97);
+  }
+  @keyframes scoreUpPanel {
+    0%   { border-color: #fbbf24; box-shadow: 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08); transform: translate(0,0); }
+    8%   { border-color: #ef4444; box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 30px 8px rgba(239,68,68,1.0); transform: translate(-3px, 1px); }
+    20%  { border-color: #ef4444; box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 36px 10px rgba(239,68,68,0.95); transform: translate(3px, -2px); }
+    35%  { border-color: #ff4d4d; box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 28px 6px rgba(239,68,68,0.85); transform: translate(-2px, 2px); }
+    55%  { border-color: #fb923c; box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 20px 4px rgba(251,146,60,0.75); transform: translate(2px, -1px); }
+    75%  { border-color: #fbbf24; box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 12px 2px rgba(253,224,71,0.5); transform: translate(-1px, 0px); }
+    100% { border-color: #fbbf24; box-shadow: 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08); transform: translate(0,0); }
+  }
+  @keyframes scoreUpDigits {
+    0%   { color: #fde047; transform: scale(1.00) rotate(0deg);  text-shadow: 0 2px 0 #92400e, 0 0 10px rgba(253,224,71,0.4); }
+    10%  { color: #ff2d2d; transform: scale(1.55) rotate(-7deg); text-shadow: 0 3px 0 #7f1d1d, 0 0 26px rgba(239,68,68,1.0); }
+    25%  { color: #ff2d2d; transform: scale(1.45) rotate(8deg);  text-shadow: 0 3px 0 #7f1d1d, 0 0 26px rgba(239,68,68,1.0); }
+    40%  { color: #ef4444; transform: scale(1.30) rotate(-5deg); text-shadow: 0 3px 0 #7f1d1d, 0 0 22px rgba(239,68,68,0.95); }
+    60%  { color: #ff7a45; transform: scale(1.12) rotate(2deg);  text-shadow: 0 2px 0 #9a3412, 0 0 14px rgba(255,122,69,0.7); }
+    100% { color: #fde047; transform: scale(1.00) rotate(0deg);  text-shadow: 0 2px 0 #92400e, 0 0 10px rgba(253,224,71,0.4); }
+  }
+
+  /* HOME RUN! HUD pulse — applied to the right HUD and SCORE panel */
+  .hud-pulse {
+    animation: hudPulse 0.42s ease-in-out 5;
+  }
+  @keyframes hudPulse {
+    0%   { box-shadow: 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 0 rgba(253,224,71,0); }
+    50%  { box-shadow: 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 24px 8px rgba(253,224,71,0.95); border-color: #fbbf24 !important; }
+    100% { box-shadow: 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 0 rgba(253,224,71,0); }
+  }
+
+  /* Full-screen flash for HR */
+  .hr-flash {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at center, rgba(255, 220, 90, 0.65) 0%, rgba(255, 130, 30, 0.25) 40%, rgba(0,0,0,0) 70%);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 8;
+  }
+
+  /* Bat-impact flash: short bright burst at the moment of contact */
+  .impact-flash {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 30% 70%, rgba(255,255,255,0.85) 0%, rgba(253,224,71,0.45) 30%, rgba(255,140,40,0.15) 55%, rgba(0,0,0,0) 75%);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 7;
+  }
+  .impact-flash.show       { animation: impactFlash 0.32s ease-out; }
+  .impact-flash.show.big {
+    /* Full-screen white blast for perfect+perfect — no positional gradient */
+    background: radial-gradient(circle at center, rgba(255,255,255,1.0) 0%, rgba(255,235,140,0.85) 30%, rgba(255,140,40,0.45) 55%, rgba(0,0,0,0) 80%);
+    animation: impactFlashBig 0.7s ease-out;
+  }
+  @keyframes impactFlash {
+    0%   { opacity: 0; }
+    14%  { opacity: 0.7; }
+    100% { opacity: 0; }
+  }
+  @keyframes impactFlashBig {
+    0%   { opacity: 0; }
+    6%   { opacity: 1; }
+    20%  { opacity: 0.7; }
+    36%  { opacity: 1; }
+    55%  { opacity: 0.5; }
+    75%  { opacity: 0.7; }
+    100% { opacity: 0; }
+  }
+
+  /* Comic-book onomatopoeia popping over the impact point on a hit.
+     "big" variant (perfect+perfect) is larger, redder, and lingers longer. */
+  .impact-text {
+    position: absolute;
+    left: 28%;
+    top: 36%;
+    transform: translate(-50%, -50%) scale(0);
+    pointer-events: none;
+    z-index: 24;
+    font-family: 'Impact', 'Arial Black', sans-serif;
+    font-weight: 900;
+    color: #fde047;
+    -webkit-text-stroke: 3px #1a1a1a;
+    text-shadow:
+      0  6px 0   #1a1a1a,
+      6px 0   0  #1a1a1a,
+      0 0 24px rgba(253, 224, 71, 0.7);
+    font-size: clamp(36px, 6vw, 72px);
+    letter-spacing: 2px;
+    opacity: 0;
+    white-space: nowrap;
+  }
+  .impact-text.big {
+    color: #ff5a4d;
+    -webkit-text-stroke: 4px #1a1a1a;
+    text-shadow:
+      0  8px 0   #1a1a1a,
+      8px 0   0  #1a1a1a,
+      0 0 36px rgba(255, 90, 77, 0.85);
+    font-size: clamp(52px, 8.4vw, 100px);
+  }
+  .impact-text.show       { animation: impactPop    0.55s cubic-bezier(.34,1.56,.64,1) forwards; }
+  .impact-text.show.big   { animation: impactPopBig 0.78s cubic-bezier(.34,1.56,.64,1) forwards; }
+  @keyframes impactPop {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.2) rotate(-25deg); }
+    25%  { opacity: 1; transform: translate(-50%, -50%) scale(1.28) rotate(-9deg); }
+    55%  { opacity: 1; transform: translate(-50%, -50%) scale(1.0)  rotate(-12deg); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(0.85) rotate(-14deg); }
+  }
+  @keyframes impactPopBig {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.2) rotate(-30deg); }
+    18%  { opacity: 1; transform: translate(-50%, -50%) scale(1.45) rotate(-7deg); }
+    42%  { opacity: 1; transform: translate(-50%, -50%) scale(1.15) rotate(-11deg); }
+    72%  { opacity: 1; transform: translate(-50%, -50%) scale(1.05) rotate(-13deg); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9)  rotate(-15deg); }
+  }
+
+  /* Screen shake — applied to the play stack on big impacts.
+     "big" variant = stronger displacement and a longer animation. */
+  .play-stack.shake     { animation: shake    0.42s cubic-bezier(.36,.07,.19,.97); }
+  .play-stack.shake.big { animation: shakeBig 0.65s cubic-bezier(.36,.07,.19,.97); }
+  /* shake keyframes now also carry a "zoom punch" — scale peaks at impact
+     start (matching the white flash burst) then eases back to 1.0 over the
+     course of the shake. Combines with translate in a single transform so
+     both effects run on the same animation. */
+  @keyframes shake {
+    0%   { transform: translate(0,  0) scale(1.055); }
+    8%   { transform: translate(-4px, 3px) scale(1.05); }
+    18%  { transform: translate( 5px,-2px) scale(1.04); }
+    28%  { transform: translate(-3px, 3px) scale(1.03); }
+    40%  { transform: translate( 3px,-3px) scale(1.02); }
+    52%  { transform: translate(-2px, 2px) scale(1.01); }
+    66%  { transform: translate( 2px,-1px) scale(1.005); }
+    80%  { transform: translate(-1px, 1px) scale(1); }
+    100% { transform: translate(0,  0) scale(1); }
+  }
+  @keyframes shakeBig {
+    0%   { transform: translate(0,  0)  rotate(0deg)    scale(1.085); }
+    6%   { transform: translate(-12px, 9px) rotate(-0.5deg) scale(1.08); }
+    14%  { transform: translate( 14px,-8px) rotate( 0.6deg) scale(1.065); }
+    22%  { transform: translate(-11px, 7px) rotate(-0.4deg) scale(1.05); }
+    32%  { transform: translate( 10px,-8px) rotate( 0.4deg) scale(1.035); }
+    44%  { transform: translate( -8px, 6px) rotate(-0.3deg) scale(1.02); }
+    56%  { transform: translate(  6px,-5px) rotate( 0.2deg) scale(1.01); }
+    68%  { transform: translate( -5px, 4px) rotate( 0.0deg) scale(1.005); }
+    80%  { transform: translate(  3px,-2px) rotate( 0.0deg) scale(1); }
+    92%  { transform: translate( -1px, 1px) rotate( 0.0deg) scale(1); }
+    100% { transform: translate(0,  0) rotate(0deg) scale(1); }
+  }
+  .hr-flash.show {
+    animation: hrFlash 1.4s ease-out forwards;
+  }
+  @keyframes hrFlash {
+    0%   { opacity: 0; }
+    8%   { opacity: 1; }
+    25%  { opacity: 0.4; }
+    40%  { opacity: 0.9; }
+    70%  { opacity: 0.3; }
+    100% { opacity: 0; }
+  }
+
+
+
+  .help {
+    position: absolute;
+    bottom: 0.4%;
+    left: 0; right: 0;
+    text-align: center;
+    color: rgba(255,255,255,0.55);
+    font-size: clamp(10px, 1.4vw, 18px);
+    letter-spacing: 0.12em;
+    pointer-events: none;
+    z-index: 30;
+  }
+
+  /* ============== WALLET MODAL (rendered at viewport level so the
+     stage's overflow:hidden can't clip it) ============== */
+  #wallet-modal {
+    position: fixed;       /* viewport, not stage */
+    inset: 0;
+    z-index: 9999;
+    background: rgba(8, 17, 30, 0.92);
+    backdrop-filter: blur(2px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    overflow-y: auto;
+  }
+  #wallet-modal.show { display: flex; }
+  .wallet-box {
+    background: #0c1a2e;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 22px 20px 20px;
+    width: 100%;
+    max-width: 380px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    color: #fff;
+    position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+    animation: walletIn 0.25s ease-out;
+  }
+  @keyframes walletIn {
+    from { opacity: 0; transform: scale(0.9) translateY(8px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .wallet-close {
+    position: absolute; top: 12px; right: 14px;
+    color: #9fc2e8; font-size: 22px; cursor: pointer;
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px;
+  }
+  .wallet-close:hover { background: rgba(255,255,255,0.06); color: #fff; }
+  .wallet-title {
+    text-align: center; color: #fff;
+    font-size: 18px; font-weight: 600;
+    margin: 4px 0 16px;
+    letter-spacing: 0.3px;
+  }
+  .wallet-input {
+    display: flex; align-items: center; justify-content: space-between;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 12px;
+    padding: 12px 14px;
+    color: #c8d1de;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .wallet-input:hover { border-color: rgba(255,255,255,0.32); }
+  .wallet-input .label { color: #fff; font-weight: 500; }
+  .wallet-icons { display: flex; align-items: center; gap: 10px; }
+  .wallet-icons .ic {
+    width: 20px; height: 20px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+  }
+  .wallet-icons .ic.g {
+    border-radius: 50%;
+    color: #fff; font-weight: 900; font-size: 10px;
+    background: conic-gradient(#4285F4 25%, #34A853 25% 50%, #FBBC05 50% 75%, #EA4335 75% 100%);
+  }
+  .wallet-icons .ic.g::before { content: "G"; color: #fff; }
+  .wallet-icons .ic.x { font-size: 14px; }
+  .or-divider {
+    display: flex; align-items: center; gap: 10px;
+    margin: 14px 0;
+    color: #6f7a8a; font-size: 13px;
+  }
+  .or-divider::before, .or-divider::after {
+    content: ""; flex: 1; height: 1px;
+    background: rgba(255,255,255,0.12);
+  }
+  .wallet-list { display: flex; flex-direction: column; gap: 6px; }
+  .wallet-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .wallet-row:hover {
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(255,255,255,0.18);
+  }
+  .wallet-row .w-icon {
+    width: 30px; height: 30px; flex: 0 0 30px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .wallet-row .w-name {
+    flex: 1; font-size: 14px; font-weight: 600; letter-spacing: 0.2px;
+  }
+  .wallet-row .w-badge {
+    font-size: 11px; padding: 3px 8px; border-radius: 6px;
+  }
+  .wallet-row .w-badge.recent {
+    background: rgba(80,180,200,0.18); color: #6ee5f3;
+  }
+  .wallet-row .w-badge.installed { color: #6f7a8a; }
+  .wallet-row .w-link { color: #6f7a8a; font-size: 14px; }
+  .wallet-row.muted .w-name, .wallet-row.muted .w-icon { opacity: 0.7; }
+
+  /* Toast */
+  .toast {
+    position: absolute;
+    top: 12%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-12px);
+    background: rgba(8, 24, 48, 0.95);
+    color: #fde047;
+    border: 2px solid rgba(253, 224, 71, 0.6);
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 13px;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 60;
+    transition: opacity 0.25s, transform 0.25s;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* Game over overlay */
+  #over-screen {
+    background: rgba(0, 0, 0, 0.78);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+  }
+  .over-panel {
+    width: 80%;
+    max-width: 640px;
+    padding: clamp(20px, 3vw, 40px) clamp(22px, 3vw, 38px);
+    background: linear-gradient(180deg, #0c1f5e 0%, #061030 100%);
+    border: 4px solid #fde047;
+    border-radius: 22px;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 30px rgba(253,224,71,0.25);
+    animation: panelIn 0.4s ease-out;
+  }
+  @keyframes panelIn { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+  .over-title {
+    font-size: clamp(28px, 7vw, 76px);
+    font-weight: 900;
+    color: #fde047;
+    text-shadow: 0 3px 0 #1f2937;
+    margin: 0 0 14px;
+    letter-spacing: 0.04em;
+  }
+  .over-sub {
+    font-size: clamp(11px, 1.6vw, 18px);
+    color: #9bd9ff;
+    letter-spacing: 0.18em;
+    margin-bottom: 6px;
+  }
+  .over-score {
+    font-family: 'Courier New', monospace;
+    font-size: clamp(40px, 11vw, 132px);
+    font-weight: 900;
+    color: #fff;
+    text-shadow: 0 0 12px rgba(255,255,255,0.4);
+  }
+  .over-stats {
+    color: #fde047;
+    margin-top: 18px;
+    font-size: clamp(14px, 3.0vw, 32px);
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1.5;
+  }
+  .over-stats .sep { color: rgba(253,224,71,0.4); margin: 0 6px; }
+  .over-buttons {
+    margin-top: 18px;
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .over-btn {
+    padding: clamp(10px, 1.5vw, 18px) clamp(20px, 3vw, 38px);
+    background: linear-gradient(180deg, #fbbf24 0%, #d97706 100%);
+    color: #0b1c4f;
+    font-weight: 900;
+    font-size: clamp(14px, 2.4vw, 26px);
+    border: 3px solid #fff7c0;
+    border-radius: 14px;
+    cursor: pointer;
+    box-shadow: 0 4px 0 #92400e;
+    letter-spacing: 0.04em;
+    flex: 0 0 auto;
+  }
+  .over-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #92400e; }
+  .over-btn.home {
+    background: linear-gradient(180deg, #4cc4ff 0%, #2563eb 100%);
+    color: #fff;
+    border-color: #c7e8ff;
+    box-shadow: 0 4px 0 #1e3a8a;
+  }
+  .over-btn.home:active { box-shadow: 0 2px 0 #1e3a8a; }
+</style>
+</head>
+<body>
+<div id="stage" class="is-title">
+
+  <!-- ===================== TITLE SCREEN ===================== -->
+  <div id="title-screen" class="screen">
+    <img class="bg" src="assets/v2_title.png" alt="">
+    <div class="wallet-pill" id="wallet-pill">NOT CONNECTED</div>
+    <button class="start-btn" id="start-btn" aria-label="1P START"></button>
+    <button class="wallet-btn" id="wallet-btn" aria-label="WALLET CONNECT"></button>
+    <div class="coin-display">
+      <img class="coin-icon" src="assets/ci.png" alt="">
+      <span class="coin-amount" id="coin-amount">1.00</span>
+    </div>
+  </div>
+
+  <!-- ===================== PLAY SCREEN ===================== -->
+  <div id="play-screen" class="screen hidden">
+    <div class="play-stack">
+      <img class="bg game-bg" src="assets/v2_game.png" alt="">
+      <img class="bg roll-bg" src="assets/v2_roll.png" alt="">
+    </div>
+
+    <!-- Score on the LEFT (covers static "SCORE 123") -->
+    <div class="score-panel">
+      <div class="label">SCORE</div>
+      <div class="value" id="score-num">00</div>
+    </div>
+
+    <!-- Right HUD: full-panel image swap by (bases, outs) state +
+         dynamic INNING number text overlay. 32 panels in assets/hud/. -->
+    <div class="hud-right">
+      <img class="hud-panel-img" id="hudPanel" src="assets/hud/hud_b000_o0.png" alt="">
+      <div class="hud-inning-text" id="inning-num">1</div>
+      <!-- Hidden stubs kept so legacy querySelectors don't crash -->
+      <div id="diamond" style="display:none">
+        <div class="b second"></div><div class="b third"></div>
+        <div class="b first"></div><div class="b home"></div>
+      </div>
+      <div id="outs-dots" style="display:none">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      </div>
+    </div>
+
+    <canvas id="fx"></canvas>
+    <div class="hr-flash" id="hrFlash"></div>
+    <div class="impact-flash" id="impactFlash"></div>
+    <div class="impact-text" id="impactText"></div>
+
+    <div class="quality-chip" id="qchip"></div>
+    <div class="result-banner" id="resultBanner"></div>
+
+    <div class="help">SPACE / TAP — 멈추기</div>
+  </div>
+
+  <!-- ===================== WALLET MODAL ===================== -->
+  <div id="wallet-modal">
+    <div class="wallet-box">
+      <div class="wallet-close" id="wallet-cancel">×</div>
+      <h3 class="wallet-title">Sign In</h3>
+      <div class="wallet-input" id="wallet-email">
+        <span class="label">Email / Socials</span>
+        <div class="wallet-icons">
+          <span class="ic g" title="Google"></span>
+          <span class="ic" title="Email">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+          </span>
+          <span class="ic x" title="X"><b>𝕏</b></span>
+        </div>
+      </div>
+      <div class="or-divider"><span>or</span></div>
+      <div class="wallet-list">
+        <div class="wallet-row" data-w="MetaMask">
+          <span class="w-icon" style="background:#f6851b;">🦊</span>
+          <span class="w-name">MetaMask</span>
+          <span class="w-badge recent">Recent</span>
+        </div>
+        <div class="wallet-row" data-w="Coinbase">
+          <span class="w-icon" style="background:#0052ff; color:#fff;">●</span>
+          <span class="w-name">Coinbase Wallet</span>
+          <span class="w-badge installed">Installed</span>
+        </div>
+        <div class="wallet-row" data-w="Keplr">
+          <span class="w-icon" style="background:#1ec0ff; color:#0c1a2e;">✦</span>
+          <span class="w-name">Keplr</span>
+          <span class="w-badge installed">Installed</span>
+        </div>
+        <div class="wallet-row" data-w="Rabby">
+          <span class="w-icon" style="background:#7c4dff;">🐰</span>
+          <span class="w-name">Rabby</span>
+          <span class="w-link">↗</span>
+        </div>
+        <div class="wallet-row" data-w="Phantom">
+          <span class="w-icon" style="background:#ab9ff2;">👻</span>
+          <span class="w-name">Phantom</span>
+          <span class="w-link">↗</span>
+        </div>
+        <div class="wallet-row muted" id="more-wallets">
+          <span class="w-icon" style="background:#222a3a; color:#9fc2e8;">⋯</span>
+          <span class="w-name">More wallets</span>
+          <span class="w-link">→</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- ===================== GAME OVER ===================== -->
+  <div id="over-screen" class="screen hidden">
+    <div class="over-panel">
+      <h2 class="over-title">GAME OVER</h2>
+      <div class="over-sub">YOUR SCORE</div>
+      <div class="over-score" id="over-score">00</div>
+      <div class="over-stats" id="over-stats"></div>
+      <div class="over-buttons">
+        <button class="over-btn" id="restart-btn">PLAY AGAIN</button>
+        <button class="over-btn home" id="home-btn">HOME</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ============================================================
+  //  Hit Init  ·  v2 layout
+  //  - Title: Wallet Connect, 1P Start, Buy Coin
+  //  - Play : score (left) + INNING/BASES/OUTS (right) over game art,
+  //           3D perspective alley for ball rolling animation
+  // ============================================================
+
+  const stage          = document.getElementById('stage');
+  const titleScreen    = document.getElementById('title-screen');
+  const playScreen     = document.getElementById('play-screen');
+  const overScreen     = document.getElementById('over-screen');
+
+  const startBtn       = document.getElementById('start-btn');
+  const walletBtn      = document.getElementById('wallet-btn');
+  const restartBtn     = document.getElementById('restart-btn');
+  const homeBtn        = document.getElementById('home-btn');
+
+  const walletPill     = document.getElementById('wallet-pill');
+  const coinAmountEl   = document.getElementById('coin-amount');
+
+  const walletModal    = document.getElementById('wallet-modal');
+  const walletCancel   = document.getElementById('wallet-cancel');
+  const walletEmail    = document.getElementById('wallet-email');
+  const moreWallets    = document.getElementById('more-wallets');
+
+  const scoreEl        = document.getElementById('score-num');
+  const inningEl       = document.getElementById('inning-num');
+  const diamond        = document.getElementById('diamond');
+  const outsDots       = document.querySelectorAll('#outs-dots .dot');
+  const qchip          = document.getElementById('qchip');
+  const resultBanner   = document.getElementById('resultBanner');
+  const overScoreEl    = document.getElementById('over-score');
+  const overStatsEl    = document.getElementById('over-stats');
+  const toastEl        = document.getElementById('toast');
+
+  const fx = document.getElementById('fx');
+  const ctx = fx.getContext('2d');
+  const hrFlash = document.getElementById('hrFlash');
+  const impactFlash = document.getElementById('impactFlash');
+  const impactText = document.getElementById('impactText');
+  const playStack = document.querySelector('.play-stack');
+  const scorePanel = document.querySelector('.score-panel');
+  const hudPanel = document.querySelector('.hud-right');
+
+  // virtual coordinates (game art width × stacked height)
+  const W = 1024;
+  const GAME_H = 474;
+  const ROLL_H = 460;
+  const H = GAME_H + ROLL_H; // 934
+  const ROLL_TOP = GAME_H;
+
+  function setupCanvas() {
+    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+    fx.width = W * dpr;
+    fx.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  setupCanvas();
+  window.addEventListener('resize', setupCanvas);
+
+  // ============================================================
+  //   ARTWORK COORDINATES (calibrated against game.png sections)
+  // ============================================================
+  const HITBOX = {
+    cx: 0.500 * W,
+    cy: 0.65 * GAME_H,
+    barLen: 0.46 * GAME_H,    // ≈ 218
+    barThick: 0.090 * W,      // ≈ 92
+  };
+  const PITCHER = { x: 0.55 * W, y: 0.32 * GAME_H };
+  const BATTER  = { x: 0.27 * W, y: 0.74 * GAME_H };
+
+  // Roll holes — they now sit at the FRONT of a 3D-style alley.
+  // Y is fixed near the bottom of the roll section (camera-near).
+  // `r` is the visual hole radius — used to size the falling ball so it can't
+  //  appear bigger than the hole opening.
+  const HOLE_Y = ROLL_TOP + 0.78 * ROLL_H;
+  const HOLES = [
+    { id: 'TRIPLE', x: 0.115 * W, color: '#9b5cff', r: 28 },
+    { id: 'SINGLE', x: 0.290 * W, color: '#3ec06b', r: 28 },
+    { id: 'OUT',    x: 0.500 * W, color: '#1f2937', r: 50 },
+    { id: 'DOUBLE', x: 0.715 * W, color: '#3b82f6', r: 28 },
+    { id: 'HR',     x: 0.890 * W, color: '#f43f5e', r: 28 },
+  ];
+  // Alley vanishing point and back-edge for perspective math.
+  // frontY is set to HOLE_Y so the ball arrives exactly on the hole row
+  // before the fall phase (no visual jump between phases).
+  const ALLEY = {
+    backY:  ROLL_TOP + 0.05 * ROLL_H,
+    frontY: HOLE_Y,
+    backXc: 0.50 * W,
+    backHalfWidth: 0.18 * W,
+    frontHalfWidth: 0.49 * W,
+  };
+
+  // ============================================================
+  //   STATE
+  // ============================================================
+  const STATE = {
+    PITCH:   'pitch',
+    HBOX_H:  'hbox_h',
+    HBOX_V:  'hbox_v',
+    SWING:   'swing',
+    ROLLING: 'rolling',
+    RESULT:  'result',
+  };
+
+  const game = {
+    state: STATE.PITCH,
+    score: 0,
+    outs: 0,
+    bases: [false, false, false],
+    atBat: 0,
+    lastResult: null,
+    runsThisAtBat: 0,
+    horizontal: null,
+    vertical: null,
+    bestScore: parseInt(localStorage.getItem('hitInitBest') || '0', 10),
+    coins: parseInt(localStorage.getItem('hitInitCoins') || '1', 10),
+    wallet: localStorage.getItem('hitInitWallet') || null,
+    stats: { hits: 0, hrs: 0, strikeouts: 0 },
+    pitchT: 0, swingT: 0, rollT: 0, resultT: 0, timer: 0,
+    hitStopUntil: 0,   // ms timestamp; while now < this, skip update + draw (freeze frame)
+  };
+
+  // Burst of star particles spawned at the bat-meets-ball point on a hit.
+  const impactBurst = {
+    active: false,
+    particles: [],  // each: {x, y, vx, vy, life, maxLife, size, hue}
+  };
+
+  const hbox = {
+    pos: 0, dir: 1, speed: 0.018,
+    moving: false, settled: null,
+    startT: 0,             // ms when this attempt started
+    timedOut: false,       // true if 5 s elapsed without input
+  };
+  const HBOX_TIMEOUT_MS = 5000;
+  const PERFECT_HALF = 0.07;
+  const COOL_HALF    = 0.22;
+
+  // Rolling state, structured for 3D-perspective animation
+  const roll = {
+    active: false,
+    finished: false,
+    targetIdx: 0,
+    phase: 'arc',      // arc → roll → fall
+    phaseT: 0,
+    fallProgress: 0,
+    pathT: 0,
+    x: 0, y: 0, scale: 1.0,
+    // randomized lateral wobble parameters per roll
+    wobbleAmp: 0, wobblePhase: 0, wobbleFreq: 0,
+    slowAmp: 0, slowPhase: 0, slowFreq: 0,
+    startBackX: 0,
+  };
+
+  const slide = { active: false, t: 0 };
+
+  // ============================================================
+  //   AUDIO  (procedurally generated via Web Audio API)
+  // ============================================================
+  let audio = null;
+  let rollingNoiseNode = null;
+  let rollingNoiseGain = null;
+
+  function ensureAudio() {
+    if (audio) return audio;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      audio = new Ctx();
+    } catch (e) { return null; }
+    return audio;
+  }
+  // Browsers require a user gesture before audio can start. Hook this on the
+  // first interaction so audio works reliably.
+  function unlockAudio() {
+    const a = ensureAudio();
+    if (a && a.state === 'suspended') a.resume();
+  }
+
+  // Bat-on-ball impact: prefer the user-supplied mixkit WAV (real swing
+  // sound), with a procedural thwack as fallback if the file can't load.
+  // Played at SWING start — i.e. AFTER both the horizontal AND vertical
+  // hit-gauges have been settled.
+  const hitAudio = (() => {
+    try {
+      const a = new Audio('mixkit-hitting-golf-ball-2080.wav');
+      a.preload = 'auto';
+      a.volume = 0.85;
+      // Some browsers need this to load early
+      a.load();
+      return a;
+    } catch (e) { return null; }
+  })();
+  let hitAudioLoadFailed = false;
+  if (hitAudio) {
+    hitAudio.addEventListener('error', () => { hitAudioLoadFailed = true; });
+  }
+
+  function playHitProcedural() {
+    const a = ensureAudio(); if (!a) return;
+    const t = a.currentTime;
+    const osc = a.createOscillator();
+    const og = a.createGain();
+    osc.frequency.setValueAtTime(900, t);
+    osc.frequency.exponentialRampToValueAtTime(180, t + 0.06);
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(0.45, t + 0.005);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    osc.connect(og).connect(a.destination);
+    osc.start(t); osc.stop(t + 0.20);
+    const buf = a.createBuffer(1, Math.floor(a.sampleRate * 0.10), a.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / data.length * 9);
+    }
+    const ns = a.createBufferSource(); ns.buffer = buf;
+    const bp = a.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 1.4;
+    const ng = a.createGain();
+    ng.gain.setValueAtTime(0.4, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.10);
+    ns.connect(bp).connect(ng).connect(a.destination);
+    ns.start(t); ns.stop(t + 0.12);
+  }
+
+  function playHit() {
+    if (hitAudio && !hitAudioLoadFailed) {
+      try {
+        hitAudio.currentTime = 0;
+        const p = hitAudio.play();
+        if (p && p.catch) {
+          p.catch(() => {
+            // play() rejected (autoplay policy or load issue) — fall back
+            hitAudioLoadFailed = true;
+            playHitProcedural();
+          });
+        }
+        return;
+      } catch (e) {
+        hitAudioLoadFailed = true;
+      }
+    }
+    playHitProcedural();
+  }
+
+  // Continuous rolling rumble — start when ball is rolling, stop when it falls
+  function startRollingSound() {
+    const a = ensureAudio(); if (!a) return;
+    if (rollingNoiseNode) return; // already running
+    const buf = a.createBuffer(1, a.sampleRate * 1.0, a.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.5;
+    const src = a.createBufferSource(); src.buffer = buf; src.loop = true;
+    const lp = a.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600;
+    const gain = a.createGain(); gain.gain.value = 0.0;
+    src.connect(lp).connect(gain).connect(a.destination);
+    src.start();
+    // ramp up
+    gain.gain.linearRampToValueAtTime(0.18, a.currentTime + 0.20);
+    rollingNoiseNode = src;
+    rollingNoiseGain = gain;
+  }
+  function stopRollingSound() {
+    const a = ensureAudio(); if (!a || !rollingNoiseNode) return;
+    const t = a.currentTime;
+    rollingNoiseGain.gain.cancelScheduledValues(t);
+    rollingNoiseGain.gain.setValueAtTime(rollingNoiseGain.gain.value, t);
+    rollingNoiseGain.gain.linearRampToValueAtTime(0, t + 0.15);
+    const node = rollingNoiseNode;
+    setTimeout(() => { try { node.stop(); } catch (e) {} }, 250);
+    rollingNoiseNode = null;
+    rollingNoiseGain = null;
+  }
+
+  // Hole drop — a "cup pop" with descending pitch
+  function playDrop() {
+    const a = ensureAudio(); if (!a) return;
+    const t = a.currentTime;
+    const osc = a.createOscillator();
+    const g = a.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(900, t);
+    osc.frequency.exponentialRampToValueAtTime(220, t + 0.18);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.32, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    osc.connect(g).connect(a.destination);
+    osc.start(t); osc.stop(t + 0.30);
+  }
+  // Cheer-ish triumph chord for HOME RUN
+  function playCheer() {
+    const a = ensureAudio(); if (!a) return;
+    const t = a.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
+    notes.forEach((freq, i) => {
+      const osc = a.createOscillator();
+      const g = a.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t + i * 0.06);
+      g.gain.setValueAtTime(0.0001, t + i * 0.06);
+      g.gain.exponentialRampToValueAtTime(0.18, t + i * 0.06 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + 0.7);
+      osc.connect(g).connect(a.destination);
+      osc.start(t + i * 0.06);
+      osc.stop(t + i * 0.06 + 0.75);
+    });
+  }
+  // Metallic CLANG — played for a perfect+perfect smash. Beefier than before:
+  // lower fundamental + boosted gains + a thumping low-frequency sweep
+  // underneath, plus a wider noise transient.
+  function playClang() {
+    const a = ensureAudio(); if (!a) return;
+    const t = a.currentTime;
+
+    // Aluminum-bat bell harmonics (lower fundamental for more "weight")
+    const harmonics = [
+      { f: 660,  g: 0.42, dur: 0.85 },
+      { f: 990,  g: 0.32, dur: 0.65 },
+      { f: 1320, g: 0.26, dur: 0.50 },
+      { f: 1980, g: 0.18, dur: 0.36 },
+      { f: 2640, g: 0.12, dur: 0.26 },
+      { f: 3960, g: 0.08, dur: 0.18 },
+    ];
+    harmonics.forEach(h => {
+      const osc = a.createOscillator();
+      const g = a.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(h.f * (1 + (Math.random() - 0.5) * 0.02), t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(h.g, t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.001, t + h.dur);
+      osc.connect(g).connect(a.destination);
+      osc.start(t);
+      osc.stop(t + h.dur + 0.1);
+    });
+
+    // Low thump — gives the impact a punch in the chest
+    const sub = a.createOscillator();
+    const subG = a.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(140, t);
+    sub.frequency.exponentialRampToValueAtTime(60, t + 0.15);
+    subG.gain.setValueAtTime(0.0001, t);
+    subG.gain.exponentialRampToValueAtTime(0.55, t + 0.005);
+    subG.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    sub.connect(subG).connect(a.destination);
+    sub.start(t); sub.stop(t + 0.25);
+
+    // Sharp metallic transient (white noise burst, hi-pass)
+    const buf = a.createBuffer(1, Math.floor(a.sampleRate * 0.09), a.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / data.length * 9);
+    }
+    const ns = a.createBufferSource(); ns.buffer = buf;
+    const hp = a.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1500;
+    const ng = a.createGain();
+    ng.gain.setValueAtTime(0.85, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+    ns.connect(hp).connect(ng).connect(a.destination);
+    ns.start(t); ns.stop(t + 0.16);
+  }
+
+  // Soft "out" tone for fail outcomes (auto-out, miss-cancel)
+  function playOutTone() {
+    const a = ensureAudio(); if (!a) return;
+    const t = a.currentTime;
+    const osc = a.createOscillator();
+    const g = a.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(280, t);
+    osc.frequency.exponentialRampToValueAtTime(80, t + 0.4);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+    osc.connect(g).connect(a.destination);
+    osc.start(t); osc.stop(t + 0.5);
+  }
+
+
+  function startHRCelebration() {
+    // Full-screen golden flash
+    hrFlash.classList.remove('show');
+    void hrFlash.offsetWidth;
+    hrFlash.classList.add('show');
+
+    // Pulse the score panel + the right HUD panel (lights blink)
+    [scorePanel, hudPanel].forEach(el => {
+      if (!el) return;
+      el.classList.remove('hud-pulse');
+      void el.offsetWidth;
+      el.classList.add('hud-pulse');
+    });
+  }
+
+  // ============================================================
+  //   INPUT
+  // ============================================================
+  function pressAction() {
+    unlockAudio();   // first user gesture unlocks audio
+    if (walletModal.classList.contains('show')) return; // modal owns input
+    if (!overScreen.classList.contains('hidden')) {
+      goToTitle();
+      return;
+    }
+    if (!playScreen.classList.contains('hidden')) {
+      if (game.state === STATE.HBOX_H && hbox.moving) settleHitbox('h');
+      else if (game.state === STATE.HBOX_V && hbox.moving) settleHitbox('v');
+      return;
+    }
+    if (!titleScreen.classList.contains('hidden')) {
+      attemptStart();
+    }
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' || e.code === 'Enter') {
+      e.preventDefault();
+      if (!e.repeat) pressAction();
+    } else if (e.code === 'Escape') {
+      if (walletModal.classList.contains('show')) walletModal.classList.remove('show');
+    }
+  });
+  document.addEventListener('pointerdown', (e) => {
+    // Don't intercept clicks on the title's interactive controls or modal.
+    if (e.target.closest('.start-btn, .wallet-btn, .over-btn, #wallet-modal')) return;
+    pressAction();
+  });
+
+  startBtn.addEventListener('click', (e) => { e.stopPropagation(); attemptStart(); });
+  restartBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // PLAY AGAIN — deduct a coin and start a new game directly.
+    if (!game.wallet)   { goToTitle(); showToast('먼저 지갑을 연결해주세요'); return; }
+    if (game.coins < 1) { goToTitle(); showToast('코인이 부족합니다'); return; }
+    overScreen.classList.add('hidden');
+    game.coins -= 1;
+    persistCoins();
+    refreshCoinDisplay();
+    refreshWalletPill();
+    startGame();
+  });
+  if (homeBtn) {
+    homeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // HOME — back to the title screen, no coin deducted, no new game.
+      goToTitle();
+    });
+  }
+  walletBtn.addEventListener('click', (e) => { e.stopPropagation(); walletModal.classList.add('show'); });
+  walletCancel.addEventListener('click', () => walletModal.classList.remove('show'));
+  walletModal.addEventListener('click', (e) => {
+    if (e.target === walletModal) walletModal.classList.remove('show');
+  });
+
+  document.querySelectorAll('.wallet-row[data-w]').forEach(el => {
+    el.addEventListener('click', () => connectWallet(el.dataset.w));
+  });
+  walletEmail.addEventListener('click', () => connectWallet('Email'));
+  moreWallets.addEventListener('click', () => showToast('More wallets coming soon'));
+
+  function connectWallet(name) {
+    game.wallet = name;
+    try { localStorage.setItem('hitInitWallet', name); } catch (e) {}
+    // Award 5 coins for connecting a wallet (every connect)
+    game.coins = Number(game.coins || 0) + 5;
+    persistCoins();
+    refreshCoinDisplay();
+    walletModal.classList.remove('show');
+    refreshWalletPill();
+    showToast(name + ' 연결됨 — +5 INIT');
+  }
+  function refreshWalletPill() {
+    if (game.wallet) {
+      walletPill.classList.add('show');
+      walletPill.textContent = '✓ ' + game.wallet;
+      walletPill.style.color = '#7af0a0';
+      walletPill.style.borderColor = '#3a7a4e';
+    } else {
+      walletPill.classList.add('show');
+      walletPill.textContent = 'NOT CONNECTED';
+      walletPill.style.color = '#9fc2e8';
+      walletPill.style.borderColor = '#2a4878';
+    }
+  }
+  function refreshCoinDisplay() {
+    if (coinAmountEl) coinAmountEl.textContent = Number(game.coins).toFixed(2);
+  }
+  function persistCoins() {
+    try { localStorage.setItem('hitInitCoins', String(game.coins)); } catch (e) {}
+  }
+  function showToast(text, ms = 1600) {
+    toastEl.textContent = text;
+    toastEl.classList.add('show');
+    clearTimeout(toastEl._t);
+    toastEl._t = setTimeout(() => toastEl.classList.remove('show'), ms);
+  }
+
+  function attemptStart() {
+    if (!game.wallet) { showToast('먼저 지갑을 연결해주세요'); return; }
+    if (game.coins < 1) { showToast('코인이 부족합니다'); return; }
+    game.coins -= 1;
+    persistCoins();
+    refreshCoinDisplay();
+    refreshWalletPill();
+    startGame();
+  }
+
+  // ============================================================
+  //   SCREENS
+  // ============================================================
+  function showTitle() {
+    stage.classList.add('is-title');
+    titleScreen.classList.remove('hidden');
+    playScreen.classList.add('hidden');
+    overScreen.classList.add('hidden');
+    refreshWalletPill();
+    refreshCoinDisplay();
+  }
+  function showPlay() {
+    stage.classList.remove('is-title');
+    titleScreen.classList.add('hidden');
+    playScreen.classList.remove('hidden');
+    overScreen.classList.add('hidden');
+  }
+  function showGameOver() {
+    overScoreEl.textContent = String(game.score).padStart(2, '0');
+    if (game.score > game.bestScore) {
+      game.bestScore = game.score;
+      try { localStorage.setItem('hitInitBest', String(game.bestScore)); } catch (e) {}
+    }
+    overStatsEl.innerHTML =
+      'HITS ' + game.stats.hits +
+      '<span class="sep">·</span>HRS ' + game.stats.hrs +
+      '<span class="sep">·</span>AT-BATS ' + game.atBat;
+    overScreen.classList.remove('hidden');
+  }
+  function goToTitle() {
+    cancelPendingGameOver();
+    overScreen.classList.add('hidden');
+    showTitle();
+  }
+
+  // ============================================================
+  //   FLOW
+  // ============================================================
+  function startGame() {
+    // Cancel any pending showGameOver from the previous run — this is what
+    // was causing a "second" game-over to appear after PLAY AGAIN if the
+    // 250 ms timer fired AFTER the new game had already started.
+    cancelPendingGameOver();
+
+    game.score = 0;
+    game.outs = 0;
+    game.bases = [false, false, false];
+    game.atBat = 0;
+    game.stats = { hits: 0, hrs: 0, strikeouts: 0 };
+    // reset the visual score ticker too
+    displayScore = 0;
+    if (_scoreTicker) { clearInterval(_scoreTicker); _scoreTicker = null; }
+    // reset every transient overlay so nothing leaks from a previous game
+    resultBanner.classList.remove('show', 'hr');
+    resultBanner.textContent = '';
+    qchip.classList.remove('show');
+    hrFlash.classList.remove('show');
+    if (impactFlash) impactFlash.classList.remove('show', 'big');
+    if (impactText)  impactText.classList.remove('show', 'big');
+    if (playStack)   playStack.classList.remove('shake', 'big');
+    game.hitStopUntil = 0;
+    impactBurst.active = false;
+    impactBurst.particles = [];
+    [scorePanel, hudPanel].forEach(el => el && el.classList.remove('hud-pulse'));
+    slide.active = false;
+    roll.active = false;
+    roll.finished = false;
+    roll.phase = 'arc';
+    stopRollingSound();
+    showPlay();
+    nextAtBat();
+  }
+  function nextAtBat() {
+    if (game.outs >= 3) { gameOver(); return; }
+    game.atBat++;
+    game.horizontal = null;
+    game.vertical = null;
+    game.lastResult = null;
+    game.runsThisAtBat = 0;
+    slide.active = false;
+    roll.active = false;
+    roll.finished = false;
+    roll.phase = 'arc';
+    updateHUD();
+    game.state = STATE.PITCH;
+    game.pitchT = performance.now();
+  }
+
+  // Five randomized speed multipliers per attempt — defeats keyboard macros
+  // that rely on a fixed gauge speed.
+  const HBOX_RAND_MULTIPLIERS = [0.80, 0.90, 1.00, 1.10, 1.20];
+  function pickHboxSpeedMult() {
+    return HBOX_RAND_MULTIPLIERS[Math.floor(Math.random() * HBOX_RAND_MULTIPLIERS.length)];
+  }
+
+  function startHitboxH() {
+    game.state = STATE.HBOX_H;
+    hbox.pos = 0; hbox.dir = 1;
+    const base = Math.min(0.0234 + (game.atBat - 1) * 0.00195, 0.0442);
+    hbox.speed = base * pickHboxSpeedMult();
+    hbox.moving = true; hbox.settled = null;
+    hbox.startT = performance.now();
+    hbox.timedOut = false;
+  }
+  function startHitboxV() {
+    game.state = STATE.HBOX_V;
+    hbox.pos = 1; hbox.dir = -1;
+    const base = Math.min(0.0234 + (game.atBat - 1) * 0.00195, 0.0442) + 0.0026;
+    hbox.speed = base * pickHboxSpeedMult();
+    hbox.moving = true; hbox.settled = null;
+    hbox.startT = performance.now();
+    hbox.timedOut = false;
+  }
+  function qualityFromPos(pos) {
+    const d = Math.abs(pos - 0.5);
+    if (d <= PERFECT_HALF) return 'perfect';
+    if (d <= COOL_HALF) return 'cool';
+    return 'miss';
+  }
+  function settleHitbox(axis) {
+    hbox.moving = false;
+    // 5-second timeout always resolves to MISS regardless of pos
+    const q = hbox.timedOut ? 'miss' : qualityFromPos(hbox.pos);
+    hbox.settled = q;
+    if (axis === 'h') game.horizontal = q;
+    else game.vertical = q;
+    flashChip(q, hbox.timedOut);
+    game.timer = performance.now() + 700;
+  }
+  function flashChip(q, timedOut) {
+    qchip.className = 'quality-chip q-' + q;
+    if (timedOut) qchip.textContent = 'TIME OUT!';
+    else qchip.textContent = q.toUpperCase() + (q === 'perfect' || q === 'cool' ? '!' : '');
+    const yPct = (HITBOX.cy / H) * 100;
+    qchip.style.top = yPct.toFixed(2) + '%';
+    qchip.classList.remove('show');
+    void qchip.offsetWidth;
+    qchip.classList.add('show');
+  }
+
+  function determineRollChance() {
+    const a = game.horizontal, b = game.vertical;
+    if (a === 'miss' && b === 'miss') return 0;
+    if (a === 'miss' || b === 'miss') return 0.30;
+    if (a === 'perfect' && b === 'perfect') return 0.95;
+    if (a === 'cool' && b === 'cool') return 0.75;
+    return 0.85;
+  }
+  function pickWeighted(weights) {
+    const total = weights.reduce((a, b) => a + b, 0);
+    let r = Math.random() * total;
+    for (let i = 0; i < weights.length; i++) {
+      r -= weights[i];
+      if (r <= 0) return i;
+    }
+    return weights.length - 1;
+  }
+  // Outcome odds when the ball reaches the rolling alley.
+  // PERFECT+PERFECT smashes carry a small bonus — OUT is 5 percentage
+  // points lower and that 5 % is added to SINGLE, rewarding the player
+  // who nailed both gauges.
+  //   default          : TRIPLE 10 / SINGLE 35 / OUT 25 / DOUBLE 20 / HR 10
+  //   perfect+perfect  : TRIPLE 10 / SINGLE 40 / OUT 20 / DOUBLE 20 / HR 10
+  function determineResultIdx(perfectPerfect) {
+    if (perfectPerfect) return pickWeighted([10, 40, 20, 20, 10]);
+    return pickWeighted([10, 35, 25, 20, 10]);
+  }
+
+  function startSwing() {
+    game.state = STATE.SWING;
+    game.swingT = performance.now();
+    playHit();   // bat impact sound (mixkit wav) at swing start
+
+    // Impact feedback — only fires when the bat actually meets the ball
+    // (i.e. neither gauge was a MISS). Perfect+Perfect gets the full "깡!"
+    // treatment: louder clang + bigger flash + screen shake.
+    const h = game.horizontal, v = game.vertical;
+    const bothMiss = h === 'miss' && v === 'miss';
+    if (!bothMiss) {
+      const isPerfectPerfect = (h === 'perfect' && v === 'perfect');
+      triggerImpact(isPerfectPerfect);
+    }
+  }
+
+  function triggerImpact(big) {
+    if (impactFlash) {
+      impactFlash.classList.remove('show', 'big');
+      void impactFlash.offsetWidth;
+      impactFlash.classList.add('show');
+      if (big) impactFlash.classList.add('big');
+    }
+    if (playStack) {
+      playStack.classList.remove('shake', 'big');
+      void playStack.offsetWidth;
+      playStack.classList.add('shake');
+      if (big) playStack.classList.add('big');
+      const dur = big ? 700 : 450;
+      setTimeout(() => playStack.classList.remove('shake', 'big'), dur);
+    }
+    if (big) playClang();
+
+    // Hit stop: freeze the canvas for a beat to give the contact weight.
+    // Offset swingT by the same amount so the swing arc visual resumes from
+    // t=0 after the freeze, rather than skipping forward.
+    const stopMs = big ? 110 : 65;
+    game.hitStopUntil = performance.now() + stopMs;
+    game.swingT += stopMs;
+
+    showImpactText(big);
+    spawnImpactBurst(big);
+  }
+
+  // ---- comic-style onomatopoeia ----
+  const IMPACT_WORDS_NORMAL = ['BANG!', 'CRACK!', 'WHACK!', 'SMACK!'];
+  const IMPACT_WORDS_BIG    = ['POW!',  'BOOM!',  'SMASH!', 'KAPOW!'];
+  function showImpactText(big) {
+    if (!impactText) return;
+    const list = big ? IMPACT_WORDS_BIG : IMPACT_WORDS_NORMAL;
+    impactText.textContent = list[Math.floor(Math.random() * list.length)];
+    impactText.classList.remove('show', 'big');
+    void impactText.offsetWidth;     // restart animation
+    impactText.classList.add('show');
+    if (big) impactText.classList.add('big');
+  }
+
+  // ---- radial star burst at the bat-meets-ball point ----
+  function spawnImpactBurst(big) {
+    const cx = BATTER.x + 30;        // matches drawSwing's impact center
+    const cy = BATTER.y - 30;
+    const count = big ? 12 : 7;
+    const baseSpeed = big ? 340 : 230;
+    const baseSize  = big ? 14 : 10;
+    impactBurst.particles = [];
+    for (let i = 0; i < count; i++) {
+      // Evenly distributed angles with small jitter so it doesn't look mechanical
+      const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+      const v = baseSpeed * (0.65 + Math.random() * 0.6);
+      impactBurst.particles.push({
+        x: cx, y: cy,
+        vx: Math.cos(angle) * v,
+        vy: Math.sin(angle) * v - 60,   // slight upward bias
+        life: 0,
+        maxLife: 380 + Math.random() * 220,
+        size: baseSize + Math.random() * 6,
+        hue: 42 + Math.random() * 18,   // yellow-orange
+      });
+    }
+    impactBurst.active = true;
+  }
+
+  function updateImpactBurst(dt) {
+    if (!impactBurst.active) return;
+    const s = dt / 1000;
+    let anyAlive = false;
+    for (const p of impactBurst.particles) {
+      if (p.life >= p.maxLife) continue;
+      p.x  += p.vx * s;
+      p.y  += p.vy * s;
+      p.vy += 720 * s;       // gravity pulls stars down as they fade
+      p.vx *= 0.985;          // slight air drag
+      p.life += dt;
+      anyAlive = true;
+    }
+    if (!anyAlive) impactBurst.active = false;
+  }
+
+  function drawImpactBurst() {
+    if (!impactBurst.active) return;
+    for (const p of impactBurst.particles) {
+      if (p.life >= p.maxLife) continue;
+      const t = p.life / p.maxLife;
+      const alpha = (1 - t) * 0.95;
+      const size = p.size * (1 - t * 0.45);
+      const color = `hsl(${p.hue}, 95%, 62%)`;
+      drawStar(p.x, p.y, size, color, alpha);
+    }
+  }
+  function resolveSwing() {
+    const goes = Math.random() < determineRollChance();
+    if (goes) {
+      const isPerfectPerfect = (game.horizontal === 'perfect' && game.vertical === 'perfect');
+      const idx = determineResultIdx(isPerfectPerfect);
+      roll.active = true;
+      roll.finished = false;
+      roll.targetIdx = idx;
+      roll.phase = 'arc';
+      // rolling rumble starts a moment after the arc lifts off
+      setTimeout(startRollingSound, 600);
+      roll.phaseT = performance.now();
+      roll.pathT = 0;
+      // start position at back of alley (slightly random offset for variety)
+      roll.startBackX = ALLEY.backXc + (Math.random() - 0.5) * ALLEY.backHalfWidth * 0.8;
+      // Wobble parameters — bigger and faster than before so the rolling
+      // path still looks chaotic at 3× the runtime. The envelope (in update)
+      // keeps the wobble alive until very near the hole.
+      roll.wobbleAmp = 55 + Math.random() * 45;      // 55..100 px peak
+      roll.wobblePhase = Math.random() * Math.PI * 2;
+      roll.wobbleFreq = 4.5 + Math.random() * 3.5;   // 4.5..8 full cycles
+      // Secondary slow oscillation for unpredictable drift
+      roll.slowAmp = 25 + Math.random() * 20;
+      roll.slowFreq = 1.2 + Math.random() * 0.8;
+      roll.slowPhase = Math.random() * Math.PI * 2;
+      // initial position: at batter (will arc HIGH into sky)
+      roll.x = BATTER.x + 30;
+      roll.y = BATTER.y - 20;
+      roll.scale = 0.85;
+      game.state = STATE.ROLLING;
+      game.rollT = performance.now();
+    } else {
+      slide.active = true;
+      slide.t = performance.now();
+      game.lastResult = 'OUT';
+      game.state = STATE.RESULT;
+      game.resultT = performance.now();
+      showBanner('OUT', '#ff6b8a');
+      playOutTone();
+    }
+  }
+
+  function applyResult(resId) {
+    let runs = 0;
+    if (resId === 'OUT') {
+      game.outs++;
+      game.stats.strikeouts++;
+    } else {
+      let advance = 0;
+      if (resId === 'SINGLE') advance = 1;
+      else if (resId === 'DOUBLE') advance = 2;
+      else if (resId === 'TRIPLE') advance = 3;
+      else if (resId === 'HR') advance = 4;
+      const b = game.bases.slice();
+      const newBases = [false, false, false];
+      for (let i = 2; i >= 0; i--) {
+        if (b[i]) {
+          const newPos = (i + 1) + advance;
+          if (newPos >= 4) runs++;
+          else newBases[newPos - 1] = true;
+        }
+      }
+      if (advance === 4) runs++;
+      else newBases[advance - 1] = true;
+      game.bases = newBases;
+      game.stats.hits++;
+      if (resId === 'HR') game.stats.hrs++;
+    }
+    game.score += runs;
+    game.runsThisAtBat = runs;
+    updateHUD();
+    // score animation is now driven by syncScoreDisplay → bumpDisplayScore
+    // which calls flashScore() per tick (one red pulse per +1 run).
+  }
+
+  function flashScore() {
+    if (!scorePanel) return;
+    scorePanel.classList.remove('score-up');
+    void scorePanel.offsetWidth;   // restart animation
+    scorePanel.classList.add('score-up');
+  }
+
+  // Show game over immediately when the third out lands.
+  // (Previously deferred 250 ms to feel "punctuated" — user wants it instant.)
+  function gameOver() {
+    showGameOver();
+  }
+  // Kept as a no-op so existing callers stay valid.
+  function cancelPendingGameOver() { /* no pending timer anymore */ }
+
+  // ============================================================
+  //   HUD UPDATE
+  // ============================================================
+  // Score the player VISIBLY sees. Lags behind game.score and ticks up
+  // one number at a time when runs come in, so the count-up reads as a
+  // sequence of red flashes (e.g. 0 → 1 → 2 → 3) rather than a jump.
+  let displayScore = 0;
+  let _scoreTicker = null;
+  const SCORE_TICK_MS = 280;
+
+  function updateHUD() {
+    inningEl.textContent = String(game.atBat || 1);
+    // Swap the full HUD panel image based on (bases, outs) state.
+    // Bases encoded as 3-char binary string "1B2B3B" matching asset filenames.
+    const basesKey = (game.bases[0] ? '1' : '0') +
+                     (game.bases[1] ? '1' : '0') +
+                     (game.bases[2] ? '1' : '0');
+    const outsKey  = Math.max(0, Math.min(3, game.outs));
+    const panelEl = document.getElementById('hudPanel');
+    if (panelEl) panelEl.src = `assets/hud/hud_b${basesKey}_o${outsKey}.png`;
+    // kick the score ticker; if the visible score is already current, this
+    // also handles the case where a hard reset happened.
+    syncScoreDisplay();
+  }
+
+  function syncScoreDisplay() {
+    if (displayScore === game.score) {
+      scoreEl.textContent = String(displayScore).padStart(2, '0');
+      return;
+    }
+    if (displayScore > game.score) {
+      // hard reset (e.g. new game)
+      displayScore = game.score;
+      if (_scoreTicker) { clearInterval(_scoreTicker); _scoreTicker = null; }
+      scoreEl.textContent = String(displayScore).padStart(2, '0');
+      return;
+    }
+    // displayScore < game.score → tick upward
+    if (_scoreTicker) return;
+    // first tick now, then continue every SCORE_TICK_MS
+    bumpDisplayScore();
+    _scoreTicker = setInterval(() => {
+      if (displayScore >= game.score) {
+        clearInterval(_scoreTicker); _scoreTicker = null;
+        return;
+      }
+      bumpDisplayScore();
+    }, SCORE_TICK_MS);
+  }
+
+  function bumpDisplayScore() {
+    displayScore++;
+    scoreEl.textContent = String(displayScore).padStart(2, '0');
+    flashScore();
+  }
+
+  function showBanner(text, color, isHR) {
+    resultBanner.textContent = text;
+    resultBanner.style.color = color || '#fde047';
+    if (!isHR) resultBanner.style.borderColor = color || '#fde047';
+    resultBanner.classList.remove('show', 'hr');
+    if (isHR) resultBanner.classList.add('hr');
+    void resultBanner.offsetWidth;
+    resultBanner.classList.add('show');
+  }
+
+  // ============================================================
+  //   UPDATE
+  // ============================================================
+  let lastT = performance.now();
+
+  function update(dt) {
+    const now = performance.now();
+    const f = dt / 16.6;
+
+    switch (game.state) {
+      case STATE.PITCH:
+        if (now - game.pitchT > 900) startHitboxH();
+        break;
+      case STATE.HBOX_H:
+        if (hbox.moving) {
+          // ball speeds up the longer the player waits — caps at +200 % over 5 s
+          const t = (now - hbox.startT) / 1000;
+          if (t > HBOX_TIMEOUT_MS / 1000) { hbox.timedOut = true; settleHitbox('h'); break; }
+          const speedMult = 1.0 + Math.min(t / 5.0, 1.0) * 2.0;
+          hbox.pos += hbox.speed * hbox.dir * f * speedMult;
+          if (hbox.pos > 1) { hbox.pos = 1; hbox.dir = -1; }
+          else if (hbox.pos < 0) { hbox.pos = 0; hbox.dir = 1; }
+        } else if (now > game.timer) startHitboxV();
+        break;
+      case STATE.HBOX_V:
+        if (hbox.moving) {
+          const t = (now - hbox.startT) / 1000;
+          if (t > HBOX_TIMEOUT_MS / 1000) { hbox.timedOut = true; settleHitbox('v'); break; }
+          const speedMult = 1.0 + Math.min(t / 5.0, 1.0) * 2.0;
+          hbox.pos += hbox.speed * hbox.dir * f * speedMult;
+          if (hbox.pos > 1) { hbox.pos = 1; hbox.dir = -1; }
+          else if (hbox.pos < 0) { hbox.pos = 0; hbox.dir = 1; }
+        } else if (now > game.timer) startSwing();
+        break;
+      case STATE.SWING:
+        if (now - game.swingT > 380) resolveSwing();
+        break;
+      case STATE.ROLLING:
+        updateRolling();
+        break;
+      case STATE.RESULT:
+        if (slide.active) {
+          if (now - game.resultT > 1100) finishResult();
+        } else if (game.lastResult === 'HR') {
+          // let the HR celebration play out before moving on
+          if (now - game.resultT > 2700) finishResult();
+        } else {
+          if (now - game.resultT > 1500) finishResult();
+        }
+        break;
+    }
+    updateImpactBurst(dt);
+  }
+  function finishResult() {
+    applyResult(game.lastResult);
+    if (game.outs >= 3) gameOver();
+    else nextAtBat();
+  }
+
+  // -- Rolling animation: 3D perspective alley
+  //    Phase 'arc' — ball flies high into the sky from the bat impact, drops
+  //                  down into the back of the alley
+  //    Phase 'roll' — slow chaotic slide with strong late-stage wobble so the
+  //                  outcome stays unclear until the very end
+  //    Phase 'fall' — short snap into the hole; ball shrinks to nothing
+  const ROLL_AIR_MS  = 1100;   // longer arc → more "real baseball" feel
+  const ROLL_RUN_MS  = 4500;   // 3× slower than before (was 1500)
+  const ROLL_FALL_MS = 70;     // very fast vanish so the ball reads as "into" the hole
+
+  function updateRolling() {
+    const now = performance.now();
+
+    if (roll.phase === 'arc') {
+      // High-arcing flight: batter → way up into the sky → back of alley.
+      // The ball "flies up" first to feel like a real hit, peak high above the
+      // game section, then drops down into the alley's back.
+      const t = Math.min(1, (now - roll.phaseT) / ROLL_AIR_MS);
+      const startX = BATTER.x + 30, startY = BATTER.y - 20;
+      const endX = roll.startBackX, endY = ALLEY.backY;
+      // Sky peak: well above the top of the game section so it really flies up
+      const skyPeakY = -60;     // above viewport top, simulates sky
+      // X moves linearly toward the back; Y goes up to skyPeakY then down to endY
+      roll.x = lerp(startX, endX, t);
+      if (t < 0.55) {
+        // up phase: from startY to skyPeakY (decelerating)
+        const u = t / 0.55;
+        const eaU = 1 - Math.pow(1 - u, 2);
+        roll.y = lerp(startY, skyPeakY, eaU);
+      } else {
+        // fall phase: from skyPeakY to endY (accelerating)
+        const u = (t - 0.55) / 0.45;
+        const eaD = u * u;
+        roll.y = lerp(skyPeakY, endY, eaD);
+      }
+      // ball appears bigger near camera (start), smaller in the sky and at back
+      const peakedness = Math.sin(t * Math.PI);          // 0 → 1 → 0
+      roll.scale = lerp(0.85, 0.42, t) - peakedness * 0.1;
+      if (t >= 1) {
+        roll.phase = 'roll';
+        roll.phaseT = now;
+      }
+      return;
+    }
+
+    if (roll.phase === 'roll') {
+      const elapsed = now - roll.phaseT;
+      const t = Math.min(1, elapsed / ROLL_RUN_MS);
+      // Heavy EASE-IN: ball lingers at the back (chaos zone, suspense) and
+      // accelerates HARD into the hole during the final stretch.
+      // pow=2.0 ⇒ derivative at t=1 is 2.0 (≈38% faster end vs the prior 1.45).
+      const eased = Math.pow(t, 2.0);
+
+      // base path: lerp from back-start to target hole
+      const targetX = HOLES[roll.targetIdx].x;
+      const baseX = lerp(roll.startBackX, targetX, eased);
+
+      // Wobble envelope — heavy chaotic sway while the ball is far away
+      // (back of the alley, target unreadable), smoothly fading to zero by the
+      // last quarter so the ball clearly approaches its target hole.
+      // Profile: 0..0.30 → 1.0  (full chaos)
+      //         0.30..0.75 → smooth decay 1.0 → 0
+      //         0.75..1.00 → 0 (calm approach)
+      let env;
+      if (eased < 0.30)        env = 1.0;
+      else if (eased < 0.75)   env = Math.pow(1 - (eased - 0.30) / 0.45, 1.6);
+      else                      env = 0;
+      const wobbleFast = Math.sin(roll.wobblePhase + eased * Math.PI * 2 * roll.wobbleFreq)
+                         * roll.wobbleAmp;
+      const wobbleSlow = Math.sin(roll.slowPhase + eased * Math.PI * 2 * roll.slowFreq)
+                         * roll.slowAmp;
+      let wobble = (wobbleFast + wobbleSlow) * env;
+
+      // clamp the lateral offset to the alley width at this depth so the ball
+      // never visibly leaves the lane
+      const alleyHalf = lerp(ALLEY.backHalfWidth, ALLEY.frontHalfWidth, eased);
+      const maxWobble = alleyHalf * 0.55;
+      if (wobble > maxWobble)  wobble = maxWobble;
+      if (wobble < -maxWobble) wobble = -maxWobble;
+
+      roll.x = baseX + wobble;
+      roll.y = lerp(ALLEY.backY, ALLEY.frontY, eased);
+      roll.scale = lerp(0.42, 1.08, eased);
+
+      // === Geometric trigger: ball reaches the OUTER colored rim ===
+      // Fires earlier than before so the ball doesn't appear to overrun the
+      // hole before it disappears.
+      const target = HOLES[roll.targetIdx];
+      const ballR  = 18 * roll.scale;
+      const dx = roll.x - target.x;
+      const dy = roll.y - HOLE_Y;
+      const dist = Math.hypot(dx, dy);
+      // Ball center within (outer rim - small margin) → trigger fall NOW
+      if (dist < target.r * 0.95) {
+        roll.fallStartX = roll.x;
+        roll.fallStartY = roll.y;
+        roll.fallStartScale = roll.scale;
+        roll.phase = 'fall';
+        roll.phaseT = now;
+        roll.fallProgress = 0;
+        return;
+      }
+
+      if (t >= 1) {
+        // safety net (shouldn't normally fire because the geometric trigger
+        // catches the ball before t reaches 1)
+        roll.fallStartX = target.x;
+        roll.fallStartY = HOLE_Y;
+        roll.fallStartScale = 1.0;
+        roll.phase = 'fall';
+        roll.phaseT = now;
+        roll.fallProgress = 0;
+      }
+      return;
+    }
+
+    if (roll.phase === 'fall') {
+      const t = Math.min(1, (now - roll.phaseT) / ROLL_FALL_MS);
+      roll.fallProgress = t;
+      if (t >= 1 && !roll.finished) {
+        roll.finished = true;
+        finishRolling();
+      }
+      return;
+    }
+  }
+
+  function finishRolling() {
+    const id = HOLES[roll.targetIdx].id;
+    game.lastResult = id;
+    game.state = STATE.RESULT;
+    game.resultT = performance.now();
+    roll.active = false;
+    stopRollingSound();
+    playDrop();
+    let label, color;
+    switch (id) {
+      case 'HR':     label = 'HOME RUN!!'; color = '#fff'; break;
+      case 'TRIPLE': label = 'TRIPLE!';   color = '#c4b5fd'; break;
+      case 'DOUBLE': label = 'DOUBLE!';   color = '#93c5fd'; break;
+      case 'SINGLE': label = 'SINGLE!';   color = '#86efac'; break;
+      case 'OUT':    label = 'OUT';       color = '#ff6b8a'; break;
+    }
+    showBanner(label, color, id === 'HR');
+    if (id === 'HR') {
+      startHRCelebration();
+      setTimeout(playCheer, 120);
+    } else if (id === 'OUT') {
+      setTimeout(playOutTone, 80);
+    }
+  }
+
+  // ============================================================
+  //   DRAW
+  // ============================================================
+  function clearCanvas() { ctx.clearRect(0, 0, W, H); }
+
+  function drawHitbox() {
+    if (game.state !== STATE.HBOX_H && game.state !== STATE.HBOX_V) return;
+    const isH = game.state === STATE.HBOX_H;
+    const cx = HITBOX.cx, cy = HITBOX.cy;
+    const w = isH ? HITBOX.barLen : HITBOX.barThick;
+    const h = isH ? HITBOX.barThick : HITBOX.barLen;
+    const x = cx - w / 2;
+    const y = cy - h / 2;
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(253, 224, 71, 0.55)';
+    ctx.shadowBlur = 22;
+    const grd = ctx.createLinearGradient(x, y, x + w, y + h);
+    grd.addColorStop(0, 'rgba(255, 215, 110, 0.92)');
+    grd.addColorStop(1, 'rgba(255, 175, 60, 0.92)');
+    ctx.fillStyle = grd;
+    roundRect(ctx, x, y, w, h, 18); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#ffe680';
+    roundRect(ctx, x, y, w, h, 18); ctx.stroke();
+    ctx.restore();
+
+    if (isH) {
+      const cw = HITBOX.barLen * COOL_HALF * 2;
+      const ch = HITBOX.barThick - 14;
+      ctx.fillStyle = 'rgba(76, 196, 255, 0.5)';
+      roundRect(ctx, cx - cw / 2, cy - ch / 2, cw, ch, 12); ctx.fill();
+      const pw = HITBOX.barLen * PERFECT_HALF * 2;
+      const ph = HITBOX.barThick - 14;
+      const pg = ctx.createLinearGradient(cx - pw / 2, 0, cx + pw / 2, 0);
+      pg.addColorStop(0, '#fde047'); pg.addColorStop(1, '#f59e0b');
+      ctx.fillStyle = pg;
+      roundRect(ctx, cx - pw / 2, cy - ph / 2, pw, ph, 10); ctx.fill();
+    } else {
+      const cw = HITBOX.barThick - 14;
+      const ch = HITBOX.barLen * COOL_HALF * 2;
+      ctx.fillStyle = 'rgba(76, 196, 255, 0.5)';
+      roundRect(ctx, cx - cw / 2, cy - ch / 2, cw, ch, 12); ctx.fill();
+      const pw = HITBOX.barThick - 14;
+      const ph = HITBOX.barLen * PERFECT_HALF * 2;
+      const pg = ctx.createLinearGradient(0, cy - ph / 2, 0, cy + ph / 2);
+      pg.addColorStop(0, '#fde047'); pg.addColorStop(1, '#f59e0b');
+      ctx.fillStyle = pg;
+      roundRect(ctx, cx - pw / 2, cy - ph / 2, pw, ph, 10); ctx.fill();
+    }
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.setLineDash([6, 5]);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (isH) { ctx.moveTo(cx, y + 4); ctx.lineTo(cx, y + h - 4); }
+    else     { ctx.moveTo(x + 4, cy); ctx.lineTo(x + w - 4, cy); }
+    ctx.stroke();
+    ctx.restore();
+
+    const px = isH ? (x + w * hbox.pos) : cx;
+    const py = isH ? cy : (y + h * hbox.pos);
+    drawBaseball(px, py, 18);
+
+    if (hbox.moving) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.65)';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      if (isH) ctx.fillText(hbox.dir > 0 ? '▶' : '◀', px + (hbox.dir > 0 ? -22 : 22), py - 26);
+      else     ctx.fillText(hbox.dir > 0 ? '▼' : '▲', px - 28, py + (hbox.dir > 0 ? -22 : 22));
+      ctx.restore();
+    }
+  }
+
+  function drawPitchBall() {
+    if (game.state !== STATE.PITCH) return;
+    const t = (performance.now() - game.pitchT) / 900;
+    const px = lerp(PITCHER.x, BATTER.x + 50, t);
+    const py = lerp(PITCHER.y + 16, BATTER.y - 30, t) - Math.sin(t * Math.PI) * 26;
+    const scale = 1 + (1 - t) * 0.4;
+    drawBaseball(px, py, 16 * scale);
+  }
+
+  function drawSwing() {
+    if (game.state !== STATE.SWING) return;
+    const t = (performance.now() - game.swingT) / 380;
+    const cx = BATTER.x + 30, cy = BATTER.y - 30;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,'+ (0.7 * (1 - t)).toFixed(2) +')';
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 60 + i * 10, -Math.PI * 0.85 + t * 1.2, -Math.PI * 0.15 + t * 1.2);
+      ctx.stroke();
+    }
+    if (t > 0.3 && t < 0.7) {
+      const k = (t - 0.3) / 0.4;
+      drawStar(cx + 50, cy - 20, 14 + k * 16, '#fde047', 0.95 - k * 0.6);
+    }
+    ctx.restore();
+  }
+
+  function drawRollingBall() {
+    if (!roll.active) return;
+    if (roll.phase === 'fall') {
+      // Very fast "into the black" vanish (~70 ms total).
+      // Ball snaps to hole center immediately and shrinks/fades to nothing.
+      const t = roll.fallProgress;
+      const cx = HOLES[roll.targetIdx].x;
+      const cy = HOLE_Y + 4;
+      const sx = (typeof roll.fallStartX === 'number') ? roll.fallStartX : cx;
+      const sy = (typeof roll.fallStartY === 'number') ? roll.fallStartY : cy;
+      const startScale = (typeof roll.fallStartScale === 'number') ? roll.fallStartScale : 1.0;
+      // arrive at hole center in the FIRST 25% of fall, then it's just shrinking
+      const dropT = Math.min(1, t * 4);
+      const xx = lerp(sx, cx, dropT);
+      const yy = lerp(sy, cy, dropT);
+      // very aggressive shrink — gone by t ≈ 0.6
+      const sc = Math.max(0, startScale * Math.pow(1 - t, 2.4));
+      if (sc <= 0.03) return;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - t * 2.6);
+      ctx.translate(xx, yy);
+      ctx.scale(sc, sc);
+      drawBaseball(0, 0, 18);
+      ctx.restore();
+      return;
+    }
+    // arc / roll: render with current scale
+    if (roll.phase === 'roll') {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath();
+      ctx.ellipse(roll.x, roll.y + 14 * roll.scale, 14 * roll.scale, 4 * roll.scale, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    if (roll.phase === 'arc') {
+      // Trail dots showing the high arc trajectory
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      const elapsed = performance.now() - roll.phaseT;
+      const t = Math.min(1, elapsed / ROLL_AIR_MS);
+      // simple persistent trail using linear interpolated positions
+      for (let i = 1; i <= 5; i++) {
+        const tt = Math.max(0, t - i * 0.06);
+        if (tt <= 0) continue;
+        const startX = BATTER.x + 30, startY = BATTER.y - 20;
+        const endX = roll.startBackX, endY = ALLEY.backY;
+        const skyPeakY = -60;
+        const tx = lerp(startX, endX, tt);
+        let ty;
+        if (tt < 0.55) ty = lerp(startY, skyPeakY, 1 - Math.pow(1 - tt/0.55, 2));
+        else           ty = lerp(skyPeakY, endY, ((tt-0.55)/0.45) * ((tt-0.55)/0.45));
+        ctx.globalAlpha = (1 - i * 0.18) * 0.35;
+        ctx.beginPath();
+        ctx.arc(tx, ty, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+    drawBaseball(roll.x, roll.y, 18 * roll.scale);
+  }
+
+  function drawSlide() {
+    if (!slide.active) return;
+    const t = (performance.now() - slide.t) / 1100;
+    if (t > 1) return;
+    const sx = BATTER.x + 60, sy = BATTER.y - 30;
+    const x = sx + Math.cos(-0.3) * 200 * t;
+    const y = sy + Math.pow(t, 2.0) * 280 - Math.sin(t * Math.PI) * 30;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(t * Math.PI * 5);
+    drawBaseball(0, 0, 16);
+    ctx.restore();
+  }
+
+  function drawBaseball(x, y, r) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath(); ctx.ellipse(x + 1, y + r * 0.8, r * 0.85, r * 0.25, 0, 0, Math.PI * 2); ctx.fill();
+    const g = ctx.createRadialGradient(x - r * 0.4, y - r * 0.4, r * 0.1, x, y, r);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#cfd1d8');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = '#475569'; ctx.stroke();
+    ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(x, y, r * 0.72, -0.55, 0.55); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, r * 0.72, Math.PI - 0.55, Math.PI + 0.55); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawStar(x, y, r, color, alpha = 1) {
+    ctx.save();
+    ctx.globalAlpha = alpha; ctx.fillStyle = color;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const ang = i * Math.PI / 5 - Math.PI / 2;
+      const rad = i % 2 === 0 ? r : r * 0.45;
+      const px = x + Math.cos(ang) * rad;
+      const py = y + Math.sin(ang) * rad;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function draw() {
+    clearCanvas();
+    drawPitchBall();
+    drawHitbox();
+    drawSwing();
+    drawImpactBurst();
+    drawRollingBall();
+    drawSlide();
+  }
+
+  // ============================================================
+  //   LOOP
+  // ============================================================
+  function loop(t) {
+    const dt = Math.min(48, t - lastT);
+    lastT = t;
+    if (!playScreen.classList.contains('hidden')) {
+      // Hit-stop: while frozen, skip both update and draw so the canvas
+      // keeps showing the impact frame. CSS-driven effects (flash, shake,
+      // zoom, onomatopoeia text) continue independently on the DOM.
+      if (performance.now() >= game.hitStopUntil) {
+        update(dt);
+        draw();
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+
+  showTitle();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hit Init</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: #06101e;
+    font-family: system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* Stage holds each screen at its natural aspect ratio, centered */
+  .stage {
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    background: #06101e;
+  }
+
+  /* All screens share the same outer width (home's natural size) */
+  .screen {
+    position: relative;
+    display: none;
+    width: 100%;
+    max-width: 1536px;
+    margin: 0 auto;
+    background: #0a1530;
+  }
+  .screen.active { display: block; }
+
+  /* Frame holds the image + hotspots. Hotspots use % coords relative to this frame */
+  .frame {
+    position: relative;
+    margin: 0 auto;
+  }
+  /* Leaderboard & marketplace images are natively narrower than home — */
+  /* keep them at their natural ratio and let the screen pad the sides */
+  #screen-leaderboard .frame,
+  #screen-marketplace .frame {
+    max-width: 1016px;
+  }
+
+  .frame img {
+    display: block;
+    width: 100%;
+    height: auto;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  /* Clickable hotspot — invisible but clickable */
+  .hotspot {
+    position: absolute;
+    cursor: pointer;
+    background: transparent;
+    /* uncomment to debug:
+    background: rgba(255, 0, 0, 0.25);
+    border: 1px solid red;
+    */
+    border-radius: 8px;
+    transition: background 0.15s ease;
+  }
+  .hotspot:hover { background: transparent; }
+  .hotspot.cta:hover { background: transparent; box-shadow: none; }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-8px);
+    background: rgba(10, 21, 48, 0.95);
+    color: #fff;
+    padding: 12px 22px;
+    border-radius: 10px;
+    border: 1.5px solid #f5c542;
+    font-weight: 700;
+    z-index: 9999;
+    pointer-events: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    opacity: 0;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    letter-spacing: 0.5px;
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* =========== Wallet modal =========== */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .modal-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .modal {
+    position: relative;
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 32px);
+    transform: scale(0.92);
+    transition: transform 0.2s ease;
+  }
+  .modal-backdrop.open .modal { transform: scale(1); }
+
+  .modal img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: calc(100vh - 32px);
+    object-fit: contain;
+    border-radius: 22px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.7), 0 0 60px rgba(78, 163, 255, 0.15);
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  .modal-close {
+    position: absolute;
+    top: -14px;
+    right: -14px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #0a1530;
+    border: 2px solid rgba(245, 197, 66, 0.6);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 2;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+  .modal-close:hover { background: #1a2c5e; transform: scale(1.05); }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <!-- =================== HOME =================== -->
+  <section class="screen active" id="screen-home">
+    <div class="frame">
+    <img src="home.png" alt="Hit Init Home" />
+
+    <!-- Logo (→ home) -->
+    <a class="hotspot" data-nav="home"
+       style="left: 2.5%; top: 2%; width: 9%; height: 7%;"></a>
+
+    <!-- Nav: HOME / LEADERBOARD / MARKETPLACE / WHITEPAPER / ABOUT -->
+    <a class="hotspot" data-nav="home"
+       style="left: 19.5%; top: 2%; width: 7%; height: 5%;"></a>
+    <a class="hotspot" data-nav="leaderboard"
+       style="left: 27.5%; top: 2%; width: 12%; height: 5%;"></a>
+    <a class="hotspot" data-nav="marketplace"
+       style="left: 41%; top: 2%; width: 11%; height: 5%;"></a>
+    <a class="hotspot" data-nav="whitepaper"
+       style="left: 54%; top: 2%; width: 10%; height: 5%;"></a>
+    <a class="hotspot" data-nav="about"
+       style="left: 66%; top: 2%; width: 7%; height: 5%;"></a>
+
+    <!-- CONNECT WALLET -->
+    <a class="hotspot cta" data-action="wallet"
+       style="left: 81%; top: 1.5%; width: 16%; height: 6%;"></a>
+
+    <!-- PLAY NOW -->
+    <a class="hotspot cta" data-action="play"
+       style="left: 8.5%; top: 63%; width: 16%; height: 7.5%;"></a>
+
+    <!-- Social icons (footer) — Discord / X / Telegram / YouTube -->
+    <a class="hotspot" data-action="discord"
+       style="left: 85.5%; top: 96.2%; width: 2.5%; height: 3%;"></a>
+    <a class="hotspot" data-action="x"
+       style="left: 89%; top: 96.2%; width: 2.5%; height: 3%;"></a>
+    <a class="hotspot" data-action="telegram"
+       style="left: 92.5%; top: 96.2%; width: 2.5%; height: 3%;"></a>
+    <a class="hotspot" data-action="youtube"
+       style="left: 95.5%; top: 96.2%; width: 2.5%; height: 3%;"></a>
+    </div>
+  </section>
+
+  <!-- =================== LEADERBOARD =================== -->
+  <section class="screen" id="screen-leaderboard">
+    <div class="frame">
+    <img src="leaderboard.png" alt="Leaderboard" />
+
+    <a class="hotspot" data-nav="home"
+       style="left: 2.5%; top: 2%; width: 9%; height: 9%;"></a>
+
+    <a class="hotspot" data-nav="home"
+       style="left: 20%; top: 3%; width: 7%; height: 6%;"></a>
+    <a class="hotspot" data-nav="leaderboard"
+       style="left: 28%; top: 3%; width: 12%; height: 6%;"></a>
+    <a class="hotspot" data-nav="marketplace"
+       style="left: 41.5%; top: 3%; width: 11%; height: 6%;"></a>
+    <a class="hotspot" data-nav="whitepaper"
+       style="left: 54%; top: 3%; width: 10%; height: 6%;"></a>
+    <a class="hotspot" data-nav="about"
+       style="left: 65.5%; top: 3%; width: 7%; height: 6%;"></a>
+
+    <a class="hotspot cta" data-action="wallet"
+       style="left: 80%; top: 2.5%; width: 17%; height: 7%;"></a>
+    </div>
+  </section>
+
+  <!-- =================== MARKETPLACE =================== -->
+  <section class="screen" id="screen-marketplace">
+    <div class="frame">
+    <img src="marketplace.png" alt="Marketplace" />
+
+    <a class="hotspot" data-nav="home"
+       style="left: 2.5%; top: 2%; width: 9%; height: 9%;"></a>
+
+    <a class="hotspot" data-nav="home"
+       style="left: 20%; top: 3%; width: 7%; height: 6%;"></a>
+    <a class="hotspot" data-nav="leaderboard"
+       style="left: 28%; top: 3%; width: 12%; height: 6%;"></a>
+    <a class="hotspot" data-nav="marketplace"
+       style="left: 41.5%; top: 3%; width: 11%; height: 6%;"></a>
+    <a class="hotspot" data-nav="whitepaper"
+       style="left: 54%; top: 3%; width: 10%; height: 6%;"></a>
+    <a class="hotspot" data-nav="about"
+       style="left: 65.5%; top: 3%; width: 7%; height: 6%;"></a>
+
+    <a class="hotspot cta" data-action="wallet"
+       style="left: 80%; top: 2.5%; width: 17%; height: 7%;"></a>
+
+    <!-- BUY NOW (right detail panel) -->
+    <a class="hotspot cta" data-action="buy"
+       style="left: 73%; top: 60%; width: 22%; height: 7%;"></a>
+    </div>
+  </section>
+
+</div>
+
+<!-- =========== Wallet modal =========== -->
+<div class="modal-backdrop" id="walletModal">
+  <div class="modal" role="dialog" aria-modal="true">
+    <button class="modal-close" id="walletModalClose" aria-label="Close">✕</button>
+    <img src="wallet.png" alt="Connect Wallet" />
+
+    <!-- Click hotspots on wallet options (% relative to image) -->
+    <a class="hotspot" data-wallet="MetaMask"
+       style="left: 6%; top: 47%; width: 88%; height: 8%;"></a>
+    <a class="hotspot" data-wallet="WalletConnect"
+       style="left: 6%; top: 56.5%; width: 88%; height: 8%;"></a>
+    <a class="hotspot" data-wallet="Coinbase Wallet"
+       style="left: 6%; top: 66%; width: 88%; height: 8%;"></a>
+    <a class="hotspot" data-wallet="Phantom"
+       style="left: 6%; top: 75.5%; width: 88%; height: 8%;"></a>
+    <a class="hotspot" data-wallet="More"
+       style="left: 6%; top: 88%; width: 88%; height: 8%;"></a>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const screens = {
+    home:        document.getElementById('screen-home'),
+    leaderboard: document.getElementById('screen-leaderboard'),
+    marketplace: document.getElementById('screen-marketplace'),
+  };
+
+  function switchScreen(name) {
+    if (!screens[name]) {
+      toast(name.toUpperCase() + ' page is coming soon!');
+      return;
+    }
+    Object.values(screens).forEach(s => s.classList.remove('active'));
+    screens[name].classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // Nav hotspots
+  document.querySelectorAll('.hotspot[data-nav]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.preventDefault();
+      switchScreen(el.dataset.nav);
+    });
+  });
+
+  // Action hotspots
+  let walletConnected = false;
+  document.querySelectorAll('.hotspot[data-action]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.preventDefault();
+      const action = el.dataset.action;
+      switch (action) {
+        case 'wallet':
+          if (walletConnected) {
+            walletConnected = false;
+            toast('Wallet disconnected');
+          } else {
+            openWalletModal();
+          }
+          break;
+        case 'play':
+          window.location.href = '../index.html';
+          break;
+        case 'buy':
+          if (!walletConnected) { toast('Connect wallet first'); break; }
+          toast('Golden Bat purchased!');
+          break;
+        case 'discord':  toast('Discord — coming soon'); break;
+        case 'x':        toast('X — coming soon'); break;
+        case 'telegram': toast('Telegram — coming soon'); break;
+        case 'youtube':  toast('YouTube — coming soon'); break;
+      }
+    });
+  });
+
+  // Wallet modal
+  const walletModal = document.getElementById('walletModal');
+  function openWalletModal()  { walletModal.classList.add('open'); }
+  function closeWalletModal() { walletModal.classList.remove('open'); }
+
+  document.getElementById('walletModalClose').addEventListener('click', closeWalletModal);
+  walletModal.addEventListener('click', e => {
+    if (e.target === walletModal) closeWalletModal();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && walletModal.classList.contains('open')) closeWalletModal();
+  });
+
+  document.querySelectorAll('.hotspot[data-wallet]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const name = btn.dataset.wallet;
+      if (name === 'More') { toast('More wallets — coming soon'); return; }
+      walletConnected = true;
+      closeWalletModal();
+      toast(`${name} connected: init1s1f...dw2a`);
+    });
+  });
+
+  // Toast helper
+  const toastEl = document.getElementById('toast');
+  let toastTimer;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
+  }
+</script>
+
+</body>
+</html>

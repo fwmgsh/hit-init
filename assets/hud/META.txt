@@ -1,0 +1,4 @@
+panel_width=220
+panel_height=360
+diamond_box=(10, 128, 210, 292)
+outs_box=(20, 296, 200, 358)

@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# Backup / archive folders (kept locally but not deployed)
+assets/_archive/
+assets/_hud_originals_bak/
+assets/_steal_originals_bak/
+*.bak
+assets/v2_game.png.bak
+
+# Large source images (we ship the cropped versions instead)
+hr_celebration.png
+Run.png
+back.png
+ball sign.png
+game.png
+good2.png
+마지막.png
+
+# Promo / dev-only files
+Hit_Init_Promo.mp4
+sfx_demo.html
+hit init 기획안 ver0.1.md
+index 복사본.html
+
+# Editor / temp
+*.swp
+*.swo
+*~
