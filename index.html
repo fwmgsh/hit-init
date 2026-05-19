@@ -587,9 +587,6 @@
     border-radius: 14px;
     border: 3px solid rgba(255,255,255,0.18);
     background: rgba(2, 12, 24, 0.75);
-    color: #fff;
-    font-size: clamp(26px, 6vw, 38px);
-    font-weight: 900;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
@@ -598,12 +595,23 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    line-height: 1;
+    padding: 0;
   }
-  .dpad-btn[data-key="ArrowLeft"]  { color: #fde047; border-color: #fde04788; }
-  .dpad-btn[data-key="ArrowUp"]    { color: #ef4444; border-color: #ef444488; }
-  .dpad-btn[data-key="ArrowDown"]  { color: #4ade80; border-color: #4ade8088; }
-  .dpad-btn[data-key="ArrowRight"] { color: #3b82f6; border-color: #3b82f688; }
+  .dpad-btn svg {
+    width: 62%;
+    height: 62%;
+    pointer-events: none;
+    transition: transform 0.08s ease-out;
+  }
+  /* Paw fill + rotation per direction — matches the colored paw slots above. */
+  .dpad-btn[data-key="ArrowLeft"]  { border-color: #fde04788; }
+  .dpad-btn[data-key="ArrowUp"]    { border-color: #ef444488; }
+  .dpad-btn[data-key="ArrowDown"]  { border-color: #4ade8088; }
+  .dpad-btn[data-key="ArrowRight"] { border-color: #3b82f688; }
+  .dpad-btn[data-key="ArrowLeft"]  svg { fill: #fde047; transform: rotate(-90deg); }
+  .dpad-btn[data-key="ArrowUp"]    svg { fill: #ef4444; transform: rotate(  0deg); }
+  .dpad-btn[data-key="ArrowDown"]  svg { fill: #4ade80; transform: rotate(180deg); }
+  .dpad-btn[data-key="ArrowRight"] svg { fill: #3b82f6; transform: rotate( 90deg); }
   .dpad-btn:active {
     transform: scale(0.92);
     background: rgba(2, 12, 24, 0.95);
@@ -1327,12 +1335,20 @@
       <div class="steal-title" id="stealTitle">STEAL!</div>
       <div class="rhythm-board" id="rhythmBoard">
         <div class="paw-sequence" id="pawSequence"></div>
-        <div class="rhythm-hint">TAP AN ARROW BELOW — or use ← ↑ ↓ →</div>
+        <div class="rhythm-hint">TAP A PAW BELOW — or use ← ↑ ↓ →</div>
         <div class="steal-dpad" id="stealDpad">
-          <button class="dpad-btn" type="button" data-key="ArrowLeft"  aria-label="Left">←</button>
-          <button class="dpad-btn" type="button" data-key="ArrowUp"    aria-label="Up">↑</button>
-          <button class="dpad-btn" type="button" data-key="ArrowDown"  aria-label="Down">↓</button>
-          <button class="dpad-btn" type="button" data-key="ArrowRight" aria-label="Right">→</button>
+          <button class="dpad-btn" type="button" data-key="ArrowLeft"  aria-label="Left">
+            <svg viewBox="0 0 64 64" aria-hidden="true"><ellipse cx="32" cy="42" rx="14" ry="11"/><ellipse cx="15" cy="27" rx="6" ry="8"/><ellipse cx="26" cy="17" rx="5.5" ry="7.5"/><ellipse cx="38" cy="17" rx="5.5" ry="7.5"/><ellipse cx="49" cy="27" rx="6" ry="8"/></svg>
+          </button>
+          <button class="dpad-btn" type="button" data-key="ArrowUp" aria-label="Up">
+            <svg viewBox="0 0 64 64" aria-hidden="true"><ellipse cx="32" cy="42" rx="14" ry="11"/><ellipse cx="15" cy="27" rx="6" ry="8"/><ellipse cx="26" cy="17" rx="5.5" ry="7.5"/><ellipse cx="38" cy="17" rx="5.5" ry="7.5"/><ellipse cx="49" cy="27" rx="6" ry="8"/></svg>
+          </button>
+          <button class="dpad-btn" type="button" data-key="ArrowDown" aria-label="Down">
+            <svg viewBox="0 0 64 64" aria-hidden="true"><ellipse cx="32" cy="42" rx="14" ry="11"/><ellipse cx="15" cy="27" rx="6" ry="8"/><ellipse cx="26" cy="17" rx="5.5" ry="7.5"/><ellipse cx="38" cy="17" rx="5.5" ry="7.5"/><ellipse cx="49" cy="27" rx="6" ry="8"/></svg>
+          </button>
+          <button class="dpad-btn" type="button" data-key="ArrowRight" aria-label="Right">
+            <svg viewBox="0 0 64 64" aria-hidden="true"><ellipse cx="32" cy="42" rx="14" ry="11"/><ellipse cx="15" cy="27" rx="6" ry="8"/><ellipse cx="26" cy="17" rx="5.5" ry="7.5"/><ellipse cx="38" cy="17" rx="5.5" ry="7.5"/><ellipse cx="49" cy="27" rx="6" ry="8"/></svg>
+          </button>
         </div>
         <div class="rhythm-progress" id="rhythmProgress"></div>
       </div>
@@ -2305,11 +2321,25 @@
     playAtBatFanfare();
   }
 
-  // Ten randomized speed multipliers per attempt — defeats keyboard macros
-  // that rely on a fixed gauge speed. Range 0.9 → 1.8 in 0.1 steps.
-  const HBOX_RAND_MULTIPLIERS = [0.90, 1.00, 1.10, 1.20, 1.30, 1.40, 1.50, 1.60, 1.70, 1.80];
+  // Three score-tiered speed multiplier pools (10 values each). The active
+  // pool widens and shifts upward as the player accumulates runs, so the
+  // gauge gets harder mid-game. Each pool covers 10 evenly-spaced values
+  // between min and max — defeats keyboard macros that rely on a fixed speed.
+  //   score 0–4   →  EASY  (0.80 → 1.50)
+  //   score 5–9   →  MID   (0.90 → 1.80)
+  //   score 10+   →  HARD  (1.20 → 2.30)
+  const HBOX_MULT_EASY = [0.80, 0.88, 0.96, 1.03, 1.11, 1.19, 1.27, 1.34, 1.42, 1.50];
+  const HBOX_MULT_MID  = [0.90, 1.00, 1.10, 1.20, 1.30, 1.40, 1.50, 1.60, 1.70, 1.80];
+  const HBOX_MULT_HARD = [1.20, 1.32, 1.44, 1.57, 1.69, 1.81, 1.93, 2.06, 2.18, 2.30];
+  function currentHboxMultPool() {
+    const s = game.score || 0;
+    if (s >= 10) return HBOX_MULT_HARD;
+    if (s >= 5)  return HBOX_MULT_MID;
+    return HBOX_MULT_EASY;
+  }
   function pickHboxSpeedMult() {
-    return HBOX_RAND_MULTIPLIERS[Math.floor(Math.random() * HBOX_RAND_MULTIPLIERS.length)];
+    const pool = currentHboxMultPool();
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
   function startHitboxH() {
