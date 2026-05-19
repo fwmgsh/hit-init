@@ -896,18 +896,22 @@
     transform: translate(-50%, -50%) scale(0);
     pointer-events: none;
     z-index: 24;
-    /* Cross-platform bold display stack — 'Impact' on macOS/Windows,
-       'Helvetica Neue' Black on iOS, 'Arial Black' as broad fallback. */
-    font-family: 'Helvetica Neue', 'Arial Black', Impact, 'Trebuchet MS', sans-serif;
+    /* Arial Black first — most consistent letterforms across A/W/K/M glyphs
+       on iOS Safari. Falls back to Helvetica Neue / Impact on other platforms. */
+    font-family: 'Arial Black', 'Helvetica Neue', Impact, 'Trebuchet MS', sans-serif;
     font-weight: 900;
     color: #fde047;
-    -webkit-text-stroke: 2.5px #1a1a1a;
+    -webkit-text-stroke: 2px #1a1a1a;
+    /* Stair-step shadow — looks uniform on diagonal glyphs (W, K, A, M) where
+       a single hard offset previously left gaps. */
     text-shadow:
-      0 4px 0 #1a1a1a,
-      4px 0 0 #1a1a1a,
-      0 0 18px rgba(253, 224, 71, 0.7);
+      1px 1px 0 #1a1a1a,
+      2px 2px 0 #1a1a1a,
+      3px 3px 0 #1a1a1a,
+      4px 4px 0 #1a1a1a,
+      0 0 16px rgba(253, 224, 71, 0.7);
     font-size: clamp(40px, 7vw, 72px);
-    letter-spacing: 1px;
+    letter-spacing: 0;
     opacity: 0;
     white-space: nowrap;
     -webkit-font-smoothing: antialiased;
@@ -916,11 +920,15 @@
   }
   .impact-text.big {
     color: #ff5a4d;
-    -webkit-text-stroke: 3px #1a1a1a;
+    -webkit-text-stroke: 2.5px #1a1a1a;
     text-shadow:
-      0 6px 0 #1a1a1a,
-      6px 0 0 #1a1a1a,
-      0 0 28px rgba(255, 90, 77, 0.85);
+      1px 1px 0 #1a1a1a,
+      2px 2px 0 #1a1a1a,
+      3px 3px 0 #1a1a1a,
+      4px 4px 0 #1a1a1a,
+      5px 5px 0 #1a1a1a,
+      6px 6px 0 #1a1a1a,
+      0 0 24px rgba(255, 90, 77, 0.85);
     font-size: clamp(56px, 9.5vw, 100px);
   }
   .impact-text.show       { animation: impactPop    0.55s cubic-bezier(.34,1.56,.64,1) forwards; }
