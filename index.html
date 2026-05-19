@@ -571,6 +571,45 @@
     font-size: clamp(13px, 1.8vw, 18px);
     letter-spacing: 0.1em;
   }
+  /* On-screen direction pad — required for mobile (no keyboard). Also usable
+     on desktop alongside the keyboard arrow keys. Colors match paw mapping. */
+  .steal-dpad {
+    display: flex;
+    justify-content: center;
+    gap: clamp(8px, 2vw, 14px);
+    margin-top: 12px;
+    user-select: none;
+  }
+  .dpad-btn {
+    flex: 0 0 auto;
+    width: clamp(54px, 13vw, 72px);
+    height: clamp(54px, 13vw, 72px);
+    border-radius: 14px;
+    border: 3px solid rgba(255,255,255,0.18);
+    background: rgba(2, 12, 24, 0.75);
+    color: #fff;
+    font-size: clamp(26px, 6vw, 38px);
+    font-weight: 900;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08);
+    transition: transform 0.08s ease-out, box-shadow 0.08s ease-out, background 0.08s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+  .dpad-btn[data-key="ArrowLeft"]  { color: #fde047; border-color: #fde04788; }
+  .dpad-btn[data-key="ArrowUp"]    { color: #ef4444; border-color: #ef444488; }
+  .dpad-btn[data-key="ArrowDown"]  { color: #4ade80; border-color: #4ade8088; }
+  .dpad-btn[data-key="ArrowRight"] { color: #3b82f6; border-color: #3b82f688; }
+  .dpad-btn:active {
+    transform: scale(0.92);
+    background: rgba(2, 12, 24, 0.95);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.55), inset 0 0 0 0 rgba(255,255,255,0);
+  }
+  .dpad-btn:focus { outline: none; }
   .steal-result-text {
     position: absolute;
     top: 32%;
@@ -849,27 +888,32 @@
     transform: translate(-50%, -50%) scale(0);
     pointer-events: none;
     z-index: 24;
-    font-family: 'Impact', 'Arial Black', sans-serif;
+    /* Cross-platform bold display stack — 'Impact' on macOS/Windows,
+       'Helvetica Neue' Black on iOS, 'Arial Black' as broad fallback. */
+    font-family: 'Helvetica Neue', 'Arial Black', Impact, 'Trebuchet MS', sans-serif;
     font-weight: 900;
     color: #fde047;
-    -webkit-text-stroke: 3px #1a1a1a;
+    -webkit-text-stroke: 2.5px #1a1a1a;
     text-shadow:
-      0  6px 0   #1a1a1a,
-      6px 0   0  #1a1a1a,
-      0 0 24px rgba(253, 224, 71, 0.7);
-    font-size: clamp(36px, 6vw, 72px);
-    letter-spacing: 2px;
+      0 4px 0 #1a1a1a,
+      4px 0 0 #1a1a1a,
+      0 0 18px rgba(253, 224, 71, 0.7);
+    font-size: clamp(40px, 7vw, 72px);
+    letter-spacing: 1px;
     opacity: 0;
     white-space: nowrap;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: geometricPrecision;
   }
   .impact-text.big {
     color: #ff5a4d;
-    -webkit-text-stroke: 4px #1a1a1a;
+    -webkit-text-stroke: 3px #1a1a1a;
     text-shadow:
-      0  8px 0   #1a1a1a,
-      8px 0   0  #1a1a1a,
-      0 0 36px rgba(255, 90, 77, 0.85);
-    font-size: clamp(52px, 8.4vw, 100px);
+      0 6px 0 #1a1a1a,
+      6px 0 0 #1a1a1a,
+      0 0 28px rgba(255, 90, 77, 0.85);
+    font-size: clamp(56px, 9.5vw, 100px);
   }
   .impact-text.show       { animation: impactPop    0.55s cubic-bezier(.34,1.56,.64,1) forwards; }
   .impact-text.show.big   { animation: impactPopBig 0.78s cubic-bezier(.34,1.56,.64,1) forwards; }
@@ -1283,7 +1327,13 @@
       <div class="steal-title" id="stealTitle">STEAL!</div>
       <div class="rhythm-board" id="rhythmBoard">
         <div class="paw-sequence" id="pawSequence"></div>
-        <div class="rhythm-hint">PRESS ARROW KEYS — ← ↑ ↓ →</div>
+        <div class="rhythm-hint">TAP AN ARROW BELOW — or use ← ↑ ↓ →</div>
+        <div class="steal-dpad" id="stealDpad">
+          <button class="dpad-btn" type="button" data-key="ArrowLeft"  aria-label="Left">←</button>
+          <button class="dpad-btn" type="button" data-key="ArrowUp"    aria-label="Up">↑</button>
+          <button class="dpad-btn" type="button" data-key="ArrowDown"  aria-label="Down">↓</button>
+          <button class="dpad-btn" type="button" data-key="ArrowRight" aria-label="Right">→</button>
+        </div>
         <div class="rhythm-progress" id="rhythmProgress"></div>
       </div>
       <div class="steal-result-text" id="stealResultText"></div>
@@ -2068,9 +2118,18 @@
       if (canSteal()) triggerSteal();
       return;
     }
+    // On-screen D-pad during steal sequence (mobile, also works on desktop).
+    const dpadBtn = e.target.closest('.dpad-btn');
+    if (dpadBtn) {
+      e.preventDefault();
+      if (steal.active && steal.phase === 'sequence') {
+        handleStealKey(dpadBtn.dataset.key);
+      }
+      return;
+    }
     // Don't intercept clicks on the title's interactive controls or modal.
     if (e.target.closest('.start-btn, .wallet-btn, .over-btn, #wallet-modal')) return;
-    // Ignore taps during steal (player must use arrow keys for sequence)
+    // Ignore taps during steal (player must use arrow keys / dpad for sequence)
     if (steal.active) return;
     pressAction();
   });
