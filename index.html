@@ -2305,9 +2305,9 @@
     playAtBatFanfare();
   }
 
-  // Five randomized speed multipliers per attempt — defeats keyboard macros
-  // that rely on a fixed gauge speed.
-  const HBOX_RAND_MULTIPLIERS = [0.80, 0.90, 1.00, 1.10, 1.20];
+  // Ten randomized speed multipliers per attempt — defeats keyboard macros
+  // that rely on a fixed gauge speed. Range 0.9 → 1.8 in 0.1 steps.
+  const HBOX_RAND_MULTIPLIERS = [0.90, 1.00, 1.10, 1.20, 1.30, 1.40, 1.50, 1.60, 1.70, 1.80];
   function pickHboxSpeedMult() {
     return HBOX_RAND_MULTIPLIERS[Math.floor(Math.random() * HBOX_RAND_MULTIPLIERS.length)];
   }
