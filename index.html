@@ -1592,6 +1592,11 @@
     stats: { hits: 0, hrs: 0, strikeouts: 0 },
     pitchT: 0, swingT: 0, rollT: 0, resultT: 0, timer: 0,
     hitStopUntil: 0,   // ms timestamp; while now < this, skip update + draw (freeze frame)
+    // Pre-rolled horizontal hbox multiplier. Set the first time drawPitchBall
+    // runs in a new PITCH phase so the pitched ball can show a fire trail when
+    // the incoming gauge will be a hot one (>1.3). Consumed + cleared by
+    // startHitboxH so the gauge gets the exact same number we previewed.
+    pendingHboxMult: null,
   };
 
   // Burst of star particles spawned at the bat-meets-ball point on a hit.
@@ -2380,6 +2385,7 @@
     if (impactText)  impactText.classList.remove('show', 'big');
     if (playStack)   playStack.classList.remove('shake', 'big');
     game.hitStopUntil = 0;
+    game.pendingHboxMult = null;
     impactBurst.active = false;
     impactBurst.particles = [];
     [scorePanel, hudPanel].forEach(el => el && el.classList.remove('hud-pulse'));
@@ -2433,7 +2439,13 @@
     game.state = STATE.HBOX_H;
     hbox.pos = 0; hbox.dir = 1;
     const base = Math.min(0.0234 + (game.atBat - 1) * 0.00195, 0.0442);
-    hbox.speed = base * pickHboxSpeedMult();
+    // Prefer the multiplier that was previewed on the pitched ball; fall back
+    // to a fresh roll if for any reason pre-roll didn't happen.
+    const mult = (game.pendingHboxMult != null)
+      ? game.pendingHboxMult
+      : pickHboxSpeedMult();
+    game.pendingHboxMult = null;
+    hbox.speed = base * mult;
     hbox.moving = true; hbox.settled = null;
     hbox.startT = performance.now();
     hbox.timedOut = false;
@@ -3261,13 +3273,86 @@
     }
   }
 
+  // Threshold above which the incoming pitch is rendered as "hot" (flame
+  // trail). Multiplier reflects how fast the upcoming hit-gauge bar will be.
+  const HOT_PITCH_THRESHOLD = 1.3;
+
   function drawPitchBall() {
     if (game.state !== STATE.PITCH) return;
+    // Lazy pre-roll: first frame of each PITCH phase locks in the multiplier
+    // so the visual we show now matches what startHitboxH() consumes later.
+    if (game.pendingHboxMult == null) {
+      game.pendingHboxMult = pickHboxSpeedMult();
+    }
     const t = (performance.now() - game.pitchT) / 900;
     const px = lerp(PITCHER.x, BATTER.x + 50, t);
     const py = lerp(PITCHER.y + 16, BATTER.y - 30, t) - Math.sin(t * Math.PI) * 26;
     const scale = 1 + (1 - t) * 0.4;
+
+    if (game.pendingHboxMult > HOT_PITCH_THRESHOLD) {
+      drawHotPitchTrail(px, py, 16 * scale, t);
+    }
     drawBaseball(px, py, 16 * scale);
+  }
+
+  // Comet-style flame trail behind a hot incoming pitch. Trail extends from
+  // the ball backward toward the pitcher, with a few flickering hotspots so
+  // it reads as fire even on still frames.
+  function drawHotPitchTrail(bx, by, ballSize, t) {
+    // Direction from BATTER → PITCHER (the direction we draw the trail).
+    const dx = PITCHER.x - BATTER.x;
+    const dy = PITCHER.y - BATTER.y;
+    const mag = Math.hypot(dx, dy) || 1;
+    const ux = dx / mag, uy = dy / mag;
+    const trailLen = ballSize * 3.6;
+    const now = performance.now();
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';   // additive — looks hot
+    // Long soft glow body
+    const gradEnd = { x: bx + ux * trailLen, y: by + uy * trailLen };
+    const grad = ctx.createLinearGradient(bx, by, gradEnd.x, gradEnd.y);
+    grad.addColorStop(0.00, 'rgba(255, 255, 220, 0.95)');
+    grad.addColorStop(0.25, 'rgba(253, 224, 71, 0.85)');
+    grad.addColorStop(0.55, 'rgba(249, 115, 22, 0.65)');
+    grad.addColorStop(1.00, 'rgba(220, 38, 38, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    // Teardrop: wide at the ball, taper toward the tail.
+    const perpX = -uy, perpY = ux;
+    const headW = ballSize * 1.05;
+    const p1x = bx + perpX * headW, p1y = by + perpY * headW;
+    const p2x = bx - perpX * headW, p2y = by - perpY * headW;
+    ctx.moveTo(p1x, p1y);
+    ctx.quadraticCurveTo(
+      bx + ux * trailLen * 0.55 + perpX * headW * 0.4,
+      by + uy * trailLen * 0.55 + perpY * headW * 0.4,
+      gradEnd.x, gradEnd.y
+    );
+    ctx.quadraticCurveTo(
+      bx + ux * trailLen * 0.55 - perpX * headW * 0.4,
+      by + uy * trailLen * 0.55 - perpY * headW * 0.4,
+      p2x, p2y
+    );
+    ctx.closePath();
+    ctx.fill();
+
+    // Flickering hotspots along the trail — gives a "burning" feel.
+    const sparks = 5;
+    for (let i = 0; i < sparks; i++) {
+      const k = (i + 0.5) / sparks;
+      const wobble = Math.sin(now * 0.04 + i * 1.3) * (ballSize * 0.18);
+      const sx = bx + ux * trailLen * k + perpX * wobble;
+      const sy = by + uy * trailLen * k + perpY * wobble;
+      const sz = ballSize * (1 - k) * 0.7;
+      const alpha = (1 - k) * 0.9;
+      const c = i % 2 === 0 ? 'rgba(255, 224, 110, ' : 'rgba(249, 130, 60, ';
+      ctx.fillStyle = c + alpha.toFixed(2) + ')';
+      ctx.beginPath();
+      ctx.arc(sx, sy, sz, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   function drawSwing() {
