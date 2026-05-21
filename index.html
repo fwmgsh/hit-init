@@ -2418,12 +2418,14 @@
   // pool widens and shifts upward as the player accumulates runs, so the
   // gauge gets harder mid-game. Each pool covers 10 evenly-spaced values
   // between min and max — defeats keyboard macros that rely on a fixed speed.
-  //   score 0–4   →  EASY  (0.80 → 1.50)
-  //   score 5–9   →  MID   (0.90 → 1.80)
-  //   score 10+   →  HARD  (1.20 → 2.30)
-  const HBOX_MULT_EASY = [0.80, 0.88, 0.96, 1.03, 1.11, 1.19, 1.27, 1.34, 1.42, 1.50];
-  const HBOX_MULT_MID  = [0.90, 1.00, 1.10, 1.20, 1.30, 1.40, 1.50, 1.60, 1.70, 1.80];
-  const HBOX_MULT_HARD = [1.20, 1.32, 1.44, 1.57, 1.69, 1.81, 1.93, 2.06, 2.18, 2.30];
+  //   score 0–4   →  EASY  (0.80 → 1.30, mean 1.05)
+  //   score 5–9   →  MID   (1.00 → 1.60, mean 1.30)
+  //   score 10+   →  HARD  (1.20 → 1.90, mean 1.55)
+  // Global floor = 0.80, ceiling = 1.90. Means rise across tiers; ranges
+  // overlap so slow / fast pitches can show up everywhere with different odds.
+  const HBOX_MULT_EASY = [0.80, 0.86, 0.91, 0.97, 1.02, 1.08, 1.13, 1.19, 1.24, 1.30];
+  const HBOX_MULT_MID  = [1.00, 1.07, 1.13, 1.20, 1.27, 1.33, 1.40, 1.47, 1.53, 1.60];
+  const HBOX_MULT_HARD = [1.20, 1.28, 1.36, 1.43, 1.51, 1.59, 1.67, 1.74, 1.82, 1.90];
   function currentHboxMultPool() {
     const s = game.score || 0;
     if (s >= 10) return HBOX_MULT_HARD;
@@ -3295,58 +3297,89 @@
     drawBaseball(px, py, 16 * scale);
   }
 
-  // Comet-style flame trail behind a hot incoming pitch. Trail extends from
-  // the ball backward toward the pitcher, with a few flickering hotspots so
-  // it reads as fire even on still frames.
+  // Hot incoming pitch — flame envelope. Designed to read as fire even at
+  // small ball sizes: large radial halo, fat comet trail, flickering tongues
+  // around the ball itself, and bright hotspots along the trail.
   function drawHotPitchTrail(bx, by, ballSize, t) {
-    // Direction from BATTER → PITCHER (the direction we draw the trail).
     const dx = PITCHER.x - BATTER.x;
     const dy = PITCHER.y - BATTER.y;
     const mag = Math.hypot(dx, dy) || 1;
     const ux = dx / mag, uy = dy / mag;
-    const trailLen = ballSize * 3.6;
+    const perpX = -uy, perpY = ux;
+    const trailLen = ballSize * 4.6;
     const now = performance.now();
 
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';   // additive — looks hot
-    // Long soft glow body
-    const gradEnd = { x: bx + ux * trailLen, y: by + uy * trailLen };
-    const grad = ctx.createLinearGradient(bx, by, gradEnd.x, gradEnd.y);
-    grad.addColorStop(0.00, 'rgba(255, 255, 220, 0.95)');
-    grad.addColorStop(0.25, 'rgba(253, 224, 71, 0.85)');
-    grad.addColorStop(0.55, 'rgba(249, 115, 22, 0.65)');
-    grad.addColorStop(1.00, 'rgba(220, 38, 38, 0)');
+    ctx.globalCompositeOperation = 'lighter';   // additive — colors stack hot
+
+    // 1. WIDE RADIAL HALO around the ball — most visible at a glance.
+    const haloR = ballSize * 2.8;
+    const halo = ctx.createRadialGradient(bx, by, ballSize * 0.4, bx, by, haloR);
+    halo.addColorStop(0.00, 'rgba(255, 245, 200, 0.85)');
+    halo.addColorStop(0.35, 'rgba(255, 150, 50, 0.55)');
+    halo.addColorStop(0.70, 'rgba(220, 50, 30, 0.25)');
+    halo.addColorStop(1.00, 'rgba(120, 20, 10, 0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(bx, by, haloR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2. FAT COMET TRAIL — wider teardrop, brighter at head.
+    const headW = ballSize * 1.55;
+    const grad = ctx.createLinearGradient(
+      bx, by, bx + ux * trailLen, by + uy * trailLen
+    );
+    grad.addColorStop(0.00, 'rgba(255, 255, 240, 1.00)');
+    grad.addColorStop(0.18, 'rgba(253, 224, 71, 0.95)');
+    grad.addColorStop(0.50, 'rgba(249, 115, 22, 0.80)');
+    grad.addColorStop(0.85, 'rgba(220, 38, 38, 0.35)');
+    grad.addColorStop(1.00, 'rgba(120, 20, 10, 0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    // Teardrop: wide at the ball, taper toward the tail.
-    const perpX = -uy, perpY = ux;
-    const headW = ballSize * 1.05;
-    const p1x = bx + perpX * headW, p1y = by + perpY * headW;
-    const p2x = bx - perpX * headW, p2y = by - perpY * headW;
-    ctx.moveTo(p1x, p1y);
+    ctx.moveTo(bx + perpX * headW, by + perpY * headW);
     ctx.quadraticCurveTo(
-      bx + ux * trailLen * 0.55 + perpX * headW * 0.4,
-      by + uy * trailLen * 0.55 + perpY * headW * 0.4,
-      gradEnd.x, gradEnd.y
+      bx + ux * trailLen * 0.55 + perpX * headW * 0.55,
+      by + uy * trailLen * 0.55 + perpY * headW * 0.55,
+      bx + ux * trailLen, by + uy * trailLen
     );
     ctx.quadraticCurveTo(
-      bx + ux * trailLen * 0.55 - perpX * headW * 0.4,
-      by + uy * trailLen * 0.55 - perpY * headW * 0.4,
-      p2x, p2y
+      bx + ux * trailLen * 0.55 - perpX * headW * 0.55,
+      by + uy * trailLen * 0.55 - perpY * headW * 0.55,
+      bx - perpX * headW, by - perpY * headW
     );
     ctx.closePath();
     ctx.fill();
 
-    // Flickering hotspots along the trail — gives a "burning" feel.
-    const sparks = 5;
+    // 3. FLAME TONGUES around the ball — flickering radial licks so the ball
+    //    itself looks engulfed in fire, not just trailing it.
+    const licks = 7;
+    for (let i = 0; i < licks; i++) {
+      const angle = (i / licks) * Math.PI * 2 + now * 0.0035;
+      const dist  = ballSize * (1.0 + Math.sin(now * 0.013 + i * 1.7) * 0.35);
+      const fx = bx + Math.cos(angle) * dist;
+      const fy = by + Math.sin(angle) * dist;
+      const sz = ballSize * (0.55 + Math.sin(now * 0.019 + i * 2.1) * 0.25);
+      const alpha = 0.65 + Math.sin(now * 0.022 + i) * 0.25;
+      ctx.fillStyle = (i % 2 === 0)
+        ? 'rgba(255, 220, 90, '  + alpha.toFixed(2) + ')'
+        : 'rgba(255, 130, 40, '  + alpha.toFixed(2) + ')';
+      ctx.beginPath();
+      ctx.arc(fx, fy, sz, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 4. TRAIL HOTSPOTS — bright moving sparks along the comet length.
+    const sparks = 6;
     for (let i = 0; i < sparks; i++) {
       const k = (i + 0.5) / sparks;
-      const wobble = Math.sin(now * 0.04 + i * 1.3) * (ballSize * 0.18);
+      const wobble = Math.sin(now * 0.045 + i * 1.3) * (ballSize * 0.28);
       const sx = bx + ux * trailLen * k + perpX * wobble;
       const sy = by + uy * trailLen * k + perpY * wobble;
-      const sz = ballSize * (1 - k) * 0.7;
-      const alpha = (1 - k) * 0.9;
-      const c = i % 2 === 0 ? 'rgba(255, 224, 110, ' : 'rgba(249, 130, 60, ';
+      const sz = ballSize * (1 - k) * 0.95;
+      const alpha = (1 - k) * 1.0;
+      const c = (i % 2 === 0)
+        ? 'rgba(255, 235, 130, '
+        : 'rgba(255, 145, 70, ';
       ctx.fillStyle = c + alpha.toFixed(2) + ')';
       ctx.beginPath();
       ctx.arc(sx, sy, sz, 0, Math.PI * 2);
