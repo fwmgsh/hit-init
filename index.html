@@ -77,20 +77,14 @@
     border-radius: 22px;
     transition: transform .15s ease, filter .15s ease;
   }
-  .start-btn::after {
-    content: '';
-    position: absolute; inset: 0;
-    border-radius: 22px;
-    box-shadow: 0 0 0 0 rgba(253,224,71,0);
-    transition: box-shadow .25s ease;
-  }
-  .start-btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
-  .start-btn:hover::after { box-shadow: 0 0 24px 4px rgba(253,224,71,0.55); }
-  .start-btn:active { transform: translateY(2px); }
-  .start-btn:focus { outline: none; }
-  .start-btn:focus::after { box-shadow: 0 0 0 4px rgba(253,224,71,0.85); }
+  /* Title buttons sit on top of the painted artwork — no visible hover/focus
+     ring (the rectangle never aligned with the illustrated button shape and
+     just looked off). Keep them clickable; suppress all overlay decorations. */
+  .start-btn:hover,
+  .start-btn:focus,
+  .start-btn:active { outline: none; }
+  .start-btn::after { content: none; }
 
-  /* WALLET CONNECT overlay (calibrated to the dark button at bottom-left) */
   .wallet-btn {
     position: absolute;
     left: 4%;
@@ -101,19 +95,11 @@
     border: 0;
     border-radius: 14px;
     cursor: pointer;
-    transition: filter .15s ease, transform .15s ease;
   }
-  .wallet-btn::after {
-    content: '';
-    position: absolute; inset: 0;
-    border-radius: 14px;
-    box-shadow: 0 0 0 0 rgba(76,196,255,0);
-    transition: box-shadow .25s;
-  }
-  .wallet-btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
-  .wallet-btn:hover::after { box-shadow: 0 0 18px 3px rgba(76,196,255,0.55); }
-  .wallet-btn:focus { outline: none; }
-  .wallet-btn:focus::after { box-shadow: 0 0 0 3px rgba(76,196,255,0.85); }
+  .wallet-btn:hover,
+  .wallet-btn:focus,
+  .wallet-btn:active { outline: none; }
+  .wallet-btn::after { content: none; }
 
   /* Coin display — sized to cover ONLY the artwork's "COIN: 1 / BUY COIN"
      row (lower-right of the title). Compact panel: CI logo + 2-decimal num. */
