@@ -2232,11 +2232,21 @@
         return false;
       }
       const addr = accounts[0].address;
+      const isFirstConnect = !localStorage.getItem('hitInitWallet');
       game.wallet = addr;
       try { localStorage.setItem('hitInitWallet', addr); } catch (e) {}
       walletModal.classList.remove('show');
+      // First-time connect from this device gets 5 free game coins. Repeat
+      // connects (same address re-enabling Keplr) don't farm more coins.
+      if (isFirstConnect) {
+        game.coins = Number(game.coins || 0) + 5;
+        persistCoins();
+        refreshCoinDisplay();
+      }
       await refreshWalletPill();
-      showToast('Connected — ' + shortAddr(addr));
+      showToast(isFirstConnect
+        ? 'Connected — +5 coins · ' + shortAddr(addr)
+        : 'Connected — ' + shortAddr(addr));
       return true;
     } catch (e) {
       console.warn('[initia] connect failed', e);
@@ -3277,7 +3287,7 @@
 
   // Threshold above which the incoming pitch is rendered as "hot" (flame
   // trail). Multiplier reflects how fast the upcoming hit-gauge bar will be.
-  const HOT_PITCH_THRESHOLD = 1.3;
+  const HOT_PITCH_THRESHOLD = 1.2;
 
   function drawPitchBall() {
     if (game.state !== STATE.PITCH) return;
