@@ -1368,49 +1368,22 @@
   <div id="wallet-modal">
     <div class="wallet-box">
       <div class="wallet-close" id="wallet-cancel">×</div>
-      <h3 class="wallet-title">Sign In</h3>
-      <div class="wallet-input" id="wallet-email">
-        <span class="label">Email / Socials</span>
-        <div class="wallet-icons">
-          <span class="ic g" title="Google"></span>
-          <span class="ic" title="Email">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
-          </span>
-          <span class="ic x" title="X"><b>𝕏</b></span>
-        </div>
-      </div>
-      <div class="or-divider"><span>or</span></div>
+      <h3 class="wallet-title">Connect to Initia</h3>
       <div class="wallet-list">
-        <div class="wallet-row" data-w="MetaMask">
-          <span class="w-icon" style="background:#f6851b;">🦊</span>
-          <span class="w-name">MetaMask</span>
-          <span class="w-badge recent">Recent</span>
-        </div>
-        <div class="wallet-row" data-w="Coinbase">
-          <span class="w-icon" style="background:#0052ff; color:#fff;">●</span>
-          <span class="w-name">Coinbase Wallet</span>
-          <span class="w-badge installed">Installed</span>
-        </div>
-        <div class="wallet-row" data-w="Keplr">
+        <div class="wallet-row" data-w="Initia">
           <span class="w-icon" style="background:#1ec0ff; color:#0c1a2e;">✦</span>
-          <span class="w-name">Keplr</span>
-          <span class="w-badge installed">Installed</span>
-        </div>
-        <div class="wallet-row" data-w="Rabby">
-          <span class="w-icon" style="background:#7c4dff;">🐰</span>
-          <span class="w-name">Rabby</span>
-          <span class="w-link">↗</span>
-        </div>
-        <div class="wallet-row" data-w="Phantom">
-          <span class="w-icon" style="background:#ab9ff2;">👻</span>
-          <span class="w-name">Phantom</span>
-          <span class="w-link">↗</span>
+          <span class="w-name">Initia Wallet / Keplr</span>
+          <span class="w-badge recent">Initia L1</span>
         </div>
         <div class="wallet-row muted" id="more-wallets">
-          <span class="w-icon" style="background:#222a3a; color:#9fc2e8;">⋯</span>
-          <span class="w-name">More wallets</span>
+          <span class="w-icon" style="background:#222a3a; color:#9fc2e8;">↗</span>
+          <span class="w-name">Don't have a wallet? Install</span>
           <span class="w-link">→</span>
         </div>
+      </div>
+      <div style="margin-top:14px; color:#8aa1c2; font-size:12px; line-height:1.5;">
+        Initia L1 is a Cosmos chain. Connect with the Initia Wallet or Keplr
+        browser extension to view your INIT balance.
       </div>
     </div>
   </div>
@@ -2185,29 +2158,149 @@
     if (e.target === walletModal) walletModal.classList.remove('show');
   });
 
-  document.querySelectorAll('.wallet-row[data-w]').forEach(el => {
-    el.addEventListener('click', () => connectWallet(el.dataset.w));
-  });
-  walletEmail.addEventListener('click', () => connectWallet('Email'));
-  moreWallets.addEventListener('click', () => showToast('More wallets coming soon'));
+  // ============================================================
+  //   INITIA L1 WALLET (Keplr / Initia Wallet — vanilla JS, no bundler)
+  // ============================================================
+  // Initia is a Cosmos chain. The official "Initia Wallet" browser extension
+  // is a Keplr fork; both expose the same `window.keplr` JS API, so this
+  // code works with either.
+  const INITIA_CHAIN_ID = 'interwoven-1';
+  const INITIA_REST     = 'https://rest.initia.xyz';
+  const INITIA_RPC      = 'https://rpc.initia.xyz';
+  const INITIA_CHAIN_CONFIG = {
+    chainId:   INITIA_CHAIN_ID,
+    chainName: 'Initia',
+    rpc:       INITIA_RPC,
+    rest:      INITIA_REST,
+    bip44: { coinType: 118 },
+    bech32Config: {
+      bech32PrefixAccAddr:  'init',
+      bech32PrefixAccPub:   'initpub',
+      bech32PrefixValAddr:  'initvaloper',
+      bech32PrefixValPub:   'initvaloperpub',
+      bech32PrefixConsAddr: 'initvalcons',
+      bech32PrefixConsPub:  'initvalconspub',
+    },
+    currencies: [{
+      coinDenom: 'INIT', coinMinimalDenom: 'uinit', coinDecimals: 6,
+    }],
+    feeCurrencies: [{
+      coinDenom: 'INIT', coinMinimalDenom: 'uinit', coinDecimals: 6,
+      gasPriceStep: { low: 0.015, average: 0.015, high: 0.04 },
+    }],
+    stakeCurrency: { coinDenom: 'INIT', coinMinimalDenom: 'uinit', coinDecimals: 6 },
+    features: [],
+  };
 
-  function connectWallet(name) {
-    game.wallet = name;
-    try { localStorage.setItem('hitInitWallet', name); } catch (e) {}
-    // Award 5 coins for connecting a wallet (every connect)
-    game.coins = Number(game.coins || 0) + 5;
-    persistCoins();
-    refreshCoinDisplay();
-    walletModal.classList.remove('show');
-    refreshWalletPill();
-    showToast(name + ' connected — +5 INIT');
+  function getKeplr() {
+    // Initia Wallet extension also injects window.keplr (it's a fork)
+    return window.keplr || null;
   }
-  function refreshWalletPill() {
+  function shortAddr(addr) {
+    if (!addr) return '';
+    return addr.slice(0, 7) + '…' + addr.slice(-5);
+  }
+  function uinitToInit(uinit) {
+    const n = Number(uinit) || 0;
+    return n / 1e6;
+  }
+  function formatInit(amount) {
+    return amount.toLocaleString('en-US', {
+      minimumFractionDigits: 2, maximumFractionDigits: 4,
+    }) + ' INIT';
+  }
+
+  async function fetchInitBalance(addr) {
+    try {
+      const r = await fetch(`${INITIA_REST}/cosmos/bank/v1beta1/balances/${addr}`);
+      if (!r.ok) return 0;
+      const d = await r.json();
+      const init = (d.balances || []).find(b => b.denom === 'uinit');
+      return init ? uinitToInit(init.amount) : 0;
+    } catch (e) {
+      console.warn('[initia] balance fetch failed', e);
+      return 0;
+    }
+  }
+
+  async function connectInitiaWallet() {
+    const keplr = getKeplr();
+    if (!keplr) {
+      showToast('Install Initia Wallet or Keplr extension');
+      window.open('https://www.keplr.app/get', '_blank');
+      return false;
+    }
+    try {
+      // Tell the wallet about Initia (no-op if already added)
+      await keplr.experimentalSuggestChain(INITIA_CHAIN_CONFIG);
+      await keplr.enable(INITIA_CHAIN_ID);
+      const signer = keplr.getOfflineSigner(INITIA_CHAIN_ID);
+      const accounts = await signer.getAccounts();
+      if (!accounts || !accounts[0]) {
+        showToast('No account found in wallet');
+        return false;
+      }
+      const addr = accounts[0].address;
+      game.wallet = addr;
+      try { localStorage.setItem('hitInitWallet', addr); } catch (e) {}
+      walletModal.classList.remove('show');
+      await refreshWalletPill();
+      showToast('Connected — ' + shortAddr(addr));
+      return true;
+    } catch (e) {
+      console.warn('[initia] connect failed', e);
+      showToast('Connection rejected');
+      return false;
+    }
+  }
+
+  function disconnectWallet() {
+    game.wallet = null;
+    try { localStorage.removeItem('hitInitWallet'); } catch (e) {}
+    refreshWalletPill();
+    showToast('Disconnected');
+  }
+
+  // Auto-reconnect on page load if we have a stored address AND wallet is
+  // still authorised (Keplr remembers per-origin).
+  (async function tryAutoReconnect() {
+    const stored = localStorage.getItem('hitInitWallet');
+    if (!stored || !stored.startsWith('init1')) return;
+    const keplr = getKeplr();
+    if (!keplr) return;
+    try {
+      await keplr.enable(INITIA_CHAIN_ID);   // throws if not previously approved
+      const accs = await keplr.getOfflineSigner(INITIA_CHAIN_ID).getAccounts();
+      if (accs && accs[0] && accs[0].address === stored) {
+        game.wallet = stored;
+        await refreshWalletPill();
+      }
+    } catch (e) {
+      // Silent: user hasn't approved this origin recently, fine.
+    }
+  })();
+
+  // Connect button (in modal) — wire up after DOM ready
+  document.querySelectorAll('.wallet-row[data-w]').forEach(el => {
+    el.addEventListener('click', () => {
+      // All wallet rows route to the single Initia connect flow for now.
+      connectInitiaWallet();
+    });
+  });
+  if (moreWallets) moreWallets.addEventListener('click', () => {
+    // Open Keplr install page in a new tab — Initia Wallet is a Keplr fork
+    // and shares the same `window.keplr` interface.
+    window.open('https://www.keplr.app/get', '_blank');
+  });
+
+  async function refreshWalletPill() {
     if (game.wallet) {
       walletPill.classList.add('show');
-      walletPill.textContent = '✓ ' + game.wallet;
       walletPill.style.color = '#7af0a0';
       walletPill.style.borderColor = '#3a7a4e';
+      walletPill.textContent = '✓ ' + shortAddr(game.wallet) + ' · …';
+      const bal = await fetchInitBalance(game.wallet);
+      walletPill.textContent = '✓ ' + shortAddr(game.wallet) + ' · ' + formatInit(bal);
     } else {
       walletPill.classList.add('show');
       walletPill.textContent = 'NOT CONNECTED';
