@@ -190,6 +190,27 @@
     pointer-events: none;
   }
 
+  /* 4번 타자 변신 오버레이 — game.atBat === 4 일 때만 표시. v2_game.png 안의
+     기존 제니 위치 위로 덮어씌움. 황금 오로라는 일부 캐릭터 영역 밖으로
+     번지면서 임팩트를 줌. */
+  .batter4-overlay {
+    position: absolute;
+    left: -8%;
+    top: 0;
+    width: 56%;
+    height: auto;
+    pointer-events: none;
+    z-index: 3;
+    display: none;
+    /* Slow up/down float so the aura feels alive even on static frames. */
+    animation: batter4Float 1.6s ease-in-out infinite;
+  }
+  .batter4-overlay.show { display: block; }
+  @keyframes batter4Float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-1.2%); }
+  }
+
   /* SCORE panel — narrower & taller so the digits and label both fit
      comfortably inside the gold-bordered box. */
   .score-panel {
@@ -1275,6 +1296,8 @@
     <div class="play-stack">
       <img class="bg game-bg" src="assets/v2_game.png" alt="">
       <img class="bg roll-bg" src="assets/v2_roll.png" alt="">
+      <!-- 4번 타자 변신 — toggled by updateBatter4Overlay() -->
+      <img class="batter4-overlay" id="batter4Overlay" src="assets/batter_4.png" alt="">
     </div>
 
     <!-- Score on the LEFT (covers static "SCORE 123") -->
@@ -1447,6 +1470,13 @@
   const rhythmProgress = document.getElementById('rhythmProgress');
   const stealResultText = document.getElementById('stealResultText');
   const playStack = document.querySelector('.play-stack');
+  const batter4Overlay = document.getElementById('batter4Overlay');
+
+  // Show the 4th batter overlay only on the 4th at-bat of a game.
+  function updateBatter4Overlay() {
+    if (!batter4Overlay) return;
+    batter4Overlay.classList.toggle('show', game.atBat === 4);
+  }
   const scorePanel = document.querySelector('.score-panel');
   const hudPanel = document.querySelector('.hud-right');
 
@@ -2419,6 +2449,7 @@
     roll.finished = false;
     roll.phase = 'arc';
     updateHUD();
+    updateBatter4Overlay();
     game.state = STATE.PITCH;
     game.pitchT = performance.now();
     playAtBatFanfare();
