@@ -4,7 +4,93 @@
 
 ---
 
-## 2026-05-13 — **ver 1.2 (최종)** (`versions/index_v1.2.html`)
+## 2026-05-21 — **ver 1.3** (`versions/index_v1.3.html`)
+
+**메인 패치: HR/도루/타격 SFX + Initia 지갑 + 4번 타자 변신 + GitHub Pages 라이브**
+
+### HR 셀러브레이션
+- `assets/hr_celebration_{1,2,3}.png` — ChatGPT가 그린 3장 HR 일러스트 (3등분 크롭)
+- HR 확정 시 1장 랜덤으로 1.7초 풀스크린 오버레이 (scale-in + 골든 글로우 박스섀도우)
+- 기존 "HOME RUN!!" 텍스트 배너 제거 — 이미지가 대체
+- `playFirework()` 추가: 휘파람↗ + 저음 boom + 밴드패스 노이즈 크래클 × 2회 layered
+- HR 확률: perfect+perfect [10,30,20,20,**20**] (HR 10% → 20%, SINGLE 30%로 감소)
+
+### 도루 SFX
+- intro 1초간 심장박동 BGM (저음 더블 펄스, 150 BPM)
+- 발바닥 정답 → `playStealHit()` (square pitch-bend 두 번, 뿅뿅)
+- 발바닥 오답 → `playStealMiss()` (220Hz square buzz, 삐)
+- 타임아웃 자동 fail은 무음 (12개 동시 소리 방지)
+- 발바닥 개수 12 → **11개**
+
+### 새 타석 팡파레
+- `playAtBatFanfare()`: 야구장 "Charge!" (G3 C4 E4 G4 - E4 - G4)
+- 톱니파 + 옥타브 위 square = 브래스 톤
+- `nextAtBat()` 끝에서 호출
+
+### 타격 게이지 — 점수 구간별 3단계 (10 values × 3 pools, 0.80~1.90)
+```js
+HBOX_MULT_EASY (score 0–4)  = [0.80…1.30], mean 1.05
+HBOX_MULT_MID  (score 5–9)  = [1.00…1.60], mean 1.30
+HBOX_MULT_HARD (score 10+)  = [1.20…1.90], mean 1.55
+```
+가로 / 세로 각자 독립 추첨. 베이스는 atBat마다 점진 증가는 그대로.
+
+### Hot Pitch 불꽃 트레일 (>1.2)
+- PITCH 상태 첫 프레임에서 H 배수 pre-roll → `game.pendingHboxMult`에 저장
+- 1.2 초과면 `drawHotPitchTrail()`:
+  - 공 둘레 큰 황금 halo (반경 2.8배 방사형)
+  - 코멧 트레일 (길이 4.6배, 흰→노란→주황→빨강 그라데이션)
+  - 공 둘레 화염 7개 (깜빡이며 도는 flame tongue)
+  - 트레일 핫스팟 6개
+
+### 모바일 UI
+- 도루 시퀀스에 D-pad 추가 (`.steal-dpad` 4개 큰 발바닥 버튼)
+- ←노랑/↑빨강/↓초록/→파랑 매핑 + 일러스트와 동일한 회전
+- 키보드 ← ↑ ↓ → 도 그대로 작동
+- 임팩트 텍스트 폰트: Arial Black first + 계단식 4스텝 그림자 + font smoothing
+- 타이틀 버튼 hover/focus 박스 제거 (일러스트 모양과 정렬 안 맞아서)
+- viewport meta + touch-action 검증
+- START / RESTART 버튼에 `unlockAudio()` 추가 (iOS Safari 안전망)
+
+### Web3 — Initia L1 지갑 연결 (바닐라 + Keplr / Initia Wallet)
+- 가짜 wallet 모달 → 진짜 `window.keplr` 호출로 교체
+- `experimentalSuggestChain()`로 Initia 체인 자동 등록 (`interwoven-1`, INIT 6 decimals, bech32 `init`)
+- 잔액 조회: `${REST}/cosmos/bank/v1beta1/balances/${addr}` → uinit / 1e6
+- wallet pill에 `✓ init1ab…xyz · 1.2345 INIT` 표시
+- 페이지 재방문 시 자동 재연결 (이전에 승인한 origin 한정)
+- 모달 UI: 가짜 5개 (MetaMask/Coinbase/Phantom 등) → "Initia Wallet / Keplr" 1줄 + 설명 텍스트
+- 클릭 즉시 +5 게임 코인 (`hitInitBonusClaimed` 키로 1회 제한, Keplr 없어도 적용)
+- **메인넷용 통합. 테스트넷 연결 + 실제 INIT 트랜잭션은 보류**
+
+### 4번 타자 — Super Saiyan 변신
+- `assets/batter_4.png` — ChatGPT 생성 (검은 고양이 + 빨강/금 망토 + Initia 본 + 황금 오로라)
+- `.batter4-overlay` (1024×1024 RGBA 투명배경) → `game.atBat === 4`일 때만 표시
+- 위/아래 1.2% 떠다니는 float 애니메이션
+- 위치: `left -4%, top 8%, width 48%` (제니 위 덮음)
+- **CSS 트랩**: `.play-stack > img` 셀렉터를 `.play-stack > img.bg`로 좁혀야 함 (안 그러면 100% 강제됨)
+- **OUT 확률 절반 + 균등 재분배**:
+  - 기본 → `[13.125, 38.125, 12.5, 23.125, 13.125]`
+  - perfect+perfect → `[12.5, 32.5, 10, 22.5, 22.5]`
+
+### 배포
+- GitHub repo: `fwmgsh/hit-init` 생성, main 브랜치 push
+- GitHub Pages API로 자동 활성화 → 라이브 URL: `https://fwmgsh.github.io/hit-init/`
+- `.gitignore` — 백업/dev 자산 64MB 제외 (`_archive`, `_bak`, 원본 PNG, 프로모 mp4 등)
+- `README.md` 추가
+
+### 보류 작업
+- 테스트넷에서 Initia 지갑 연결 트러블슈팅
+- 테스트넷 gameboy 도메인 등록 / 대체 주소 결정
+- 점수 기록용 별도 주소 결정
+- `@cosmjs/stargate` CDN 도입 + 실제 INIT 송금 (게임 시작 차감 + 점수 메모 기록)
+- Firebase 랭킹 백엔드 + leaderboard 페이지
+- favicon / og:image / 음소거 버튼
+- Initia Auto-Signing / Ghost Wallets
+- Initia 이코시스템 dApp 등록
+
+---
+
+## 2026-05-13 — **ver 1.2** (`versions/index_v1.2.html`)
 
 **메인 패치: 도루(STEAL) 모드 + 자산 최적화**
 
