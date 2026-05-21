@@ -2163,7 +2163,7 @@
     e.stopPropagation();
     unlockAudio();
     // PLAY AGAIN — deduct a coin and start a new game directly.
-    if (!game.wallet)   { goToTitle(); showToast('Please connect your wallet first'); return; }
+    // Wallet not required; only coins matter.
     if (game.coins < 1) { goToTitle(); showToast('Not enough coins'); return; }
     overScreen.classList.add('hidden');
     game.coins -= 1;
@@ -2367,7 +2367,8 @@
   }
 
   function attemptStart() {
-    if (!game.wallet) { showToast('Please connect your wallet first'); return; }
+    // Wallet is optional — players can start without connecting. The wallet
+    // pill / coins still work if they do connect.
     if (game.coins < 1) { showToast('Not enough coins'); return; }
     game.coins -= 1;
     persistCoins();
