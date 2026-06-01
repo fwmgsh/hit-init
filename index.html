@@ -2191,12 +2191,14 @@
   // Initia is a Cosmos chain. The official "Initia Wallet" browser extension
   // is a Keplr fork; both expose the same `window.keplr` JS API, so this
   // code works with either.
-  const INITIA_CHAIN_ID = 'interwoven-1';
-  const INITIA_REST     = 'https://rest.initia.xyz';
-  const INITIA_RPC      = 'https://rpc.initia.xyz';
+  // TESTNET mode — game pays in testnet INIT during development. Switch
+  // back to interwoven-1 / rest.initia.xyz / rpc.initia.xyz when promoting.
+  const INITIA_CHAIN_ID = 'initiation-2';
+  const INITIA_REST     = 'https://rest.testnet.initia.xyz';
+  const INITIA_RPC      = 'https://rpc.testnet.initia.xyz';
   const INITIA_CHAIN_CONFIG = {
     chainId:   INITIA_CHAIN_ID,
-    chainName: 'Initia',
+    chainName: 'Initia Testnet',
     rpc:       INITIA_RPC,
     rest:      INITIA_REST,
     bip44: { coinType: 118 },
