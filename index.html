@@ -2347,16 +2347,25 @@
       walletPill.style.borderColor = '#3a7a4e';
       walletPill.textContent = '✓ ' + shortAddr(game.wallet) + ' · …';
       const bal = await fetchInitBalance(game.wallet);
+      game.initBalance = bal;
       walletPill.textContent = '✓ ' + shortAddr(game.wallet) + ' · ' + formatInit(bal);
+      refreshCoinDisplay();
     } else {
       walletPill.classList.add('show');
       walletPill.textContent = 'NOT CONNECTED';
       walletPill.style.color = '#9fc2e8';
       walletPill.style.borderColor = '#2a4878';
+      game.initBalance = null;
+      refreshCoinDisplay();
     }
   }
   function refreshCoinDisplay() {
-    if (coinAmountEl) coinAmountEl.textContent = Number(game.coins).toFixed(2);
+    if (!coinAmountEl) return;
+    // When connected to Initia, the panel mirrors the on-chain INIT balance.
+    // Otherwise it falls back to the local game-coin counter (legacy).
+    const showInit = game.wallet && typeof game.initBalance === 'number';
+    const value = showInit ? game.initBalance : Number(game.coins);
+    coinAmountEl.textContent = value.toFixed(2);
   }
   function persistCoins() {
     try { localStorage.setItem('hitInitCoins', String(game.coins)); } catch (e) {}
