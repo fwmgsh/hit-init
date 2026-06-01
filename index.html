@@ -2290,6 +2290,21 @@
     showToast('Disconnected');
   }
 
+  // ?reset=1 (or ?reset=wallet) wipes the stored wallet/bonus state so the
+  // next WALLET CONNECT starts from scratch. Easier than having the user
+  // paste console commands.
+  (function maybeResetFromURL() {
+    try {
+      const q = new URLSearchParams(location.search);
+      if (q.get('reset')) {
+        localStorage.removeItem('hitInitWallet');
+        localStorage.removeItem('hitInitBonusClaimed');
+        // Clean up the query param so reloads don't keep resetting.
+        history.replaceState({}, '', location.pathname);
+      }
+    } catch (_) {}
+  })();
+
   // Auto-reconnect on page load if we have a stored address AND wallet is
   // still authorised (Keplr remembers per-origin).
   (async function tryAutoReconnect() {
