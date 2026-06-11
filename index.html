@@ -2176,6 +2176,13 @@
         refreshWalletPill();
         startGame();
       } catch (err) {
+        if (isTxAlreadyCachedError(err)) {
+          showToast('Paid 1 INIT — play ball!');
+          overScreen.classList.add('hidden');
+          refreshWalletPill();
+          startGame();
+          return;
+        }
         console.warn('[charge] failed', err);
         showToast(txErrorMessage(err), 8000);
       }
@@ -2490,6 +2497,15 @@
     return 'TX error: ' + msg.slice(0, 80);
   }
 
+  // Cosmjs broadcasts the tx once and (in some cases) internally retries.
+  // When the first broadcast already made it into the chain's mempool, the
+  // retry comes back with "tx already exists in cache" — looks like an error
+  // but the first one is on its way to being committed. Treat as success.
+  function isTxAlreadyCachedError(e) {
+    const msg = (e && e.message) || String(e || '');
+    return /tx already exists in cache/i.test(msg);
+  }
+
   async function attemptStart() {
     // Two flows: with a connected Initia wallet (real 1 INIT TX) or without
     // (legacy local game-coin deduction). The local fallback keeps the demo
@@ -2506,6 +2522,12 @@
         refreshWalletPill();   // re-fetch balance after charge
         startGame();
       } catch (e) {
+        if (isTxAlreadyCachedError(e)) {
+          showToast('Paid 1 INIT — play ball!');
+          refreshWalletPill();
+          startGame();
+          return;
+        }
         console.warn('[charge] failed', e);
         showToast(txErrorMessage(e), 8000);
       }
@@ -2939,6 +2961,12 @@
         showToast('Score saved on-chain ✓');
         refreshWalletPill();   // re-fetch balance after dust + gas
       }).catch(err => {
+        if (isTxAlreadyCachedError(err)) {
+          // First broadcast already in mempool — actually saved.
+          showToast('Score saved on-chain ✓');
+          refreshWalletPill();
+          return;
+        }
         console.warn('[recordScore] failed', err);
         // Cancelling the score TX shouldn't be alarming — just inform.
         if (/reject(ed)?/i.test((err && err.message) || '')) {
