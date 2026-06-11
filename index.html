@@ -2426,10 +2426,13 @@
   const MEMO_DUST_UINIT   = '1';         // 1 uinit dust carrying the score memo
 
   // Lazy-load @cosmjs/stargate from esm.sh the first time we need to sign.
+  // `?bundle-deps` is required: without it esm.sh leaves libsodium-wrappers
+  // as a separate ESM module whose Promise-based init fails in browsers
+  // ("Cannot read properties of undefined (reading 'then')").
   let _stargateLib = null;
   async function getStargateLib() {
     if (!_stargateLib) {
-      _stargateLib = await import('https://esm.sh/@cosmjs/stargate@0.32.4');
+      _stargateLib = await import('https://esm.sh/@cosmjs/stargate@0.32.4?bundle-deps');
     }
     return _stargateLib;
   }
