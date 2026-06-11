@@ -2417,11 +2417,12 @@
   // ============================================================
   //   REAL INIT TRANSACTIONS (Initia testnet)
   // ============================================================
-  // Treasury + score log addresses — both point at the operator's testnet
-  // wallet for now (self-send while developing, so INIT isn't actually
-  // burned, only gas is). Split into separate addresses before mainnet.
-  const TREASURY_ADDRESS  = 'init1ap7crqv02ulaatmzzsdcnawq2ayr2tlr9uvvms';
-  const SCORE_LOG_ADDRESS = 'init1ap7crqv02ulaatmzzsdcnawq2ayr2tlr9uvvms';
+  // Treasury + score log addresses (dedicated testnet receivers — separate
+  // from the player wallet, so 1 INIT is actually transferred out per game
+  // instead of self-sending). Split into TWO addresses before launch if
+  // revenue tracking should be separate from score tracking.
+  const TREASURY_ADDRESS  = 'init1hxgp595lwvxpaxrh5aarejmmj23nsfl6kahl7z';
+  const SCORE_LOG_ADDRESS = 'init1hxgp595lwvxpaxrh5aarejmmj23nsfl6kahl7z';
   const GAME_COST_UINIT   = '1000000';   // 1 INIT per game start
   const MEMO_DUST_UINIT   = '1';         // 1 uinit dust carrying the score memo
 
