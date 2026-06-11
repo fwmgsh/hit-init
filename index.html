@@ -2467,7 +2467,11 @@
   async function recordScore(score, atbats, hrs) {
     if (!game.wallet) throw new Error('Wallet not connected');
     const client = await getSigningClient();
-    const memo = `HIT_INIT:score=${score}:atbats=${atbats}:hrs=${hrs}:t=${Math.floor(Date.now()/1000)}`;
+    // Milliseconds (not seconds) + random nonce so two recordScore calls in
+    // the same second never produce identical memos — and therefore never
+    // collide on the same tx hash ("tx already exists in cache" rejection).
+    const nonce = Math.floor(Math.random() * 1e6).toString(36);
+    const memo = `HIT_INIT:score=${score}:atbats=${atbats}:hrs=${hrs}:t=${Date.now()}:n=${nonce}`;
     return client.sendTokens(
       game.wallet, SCORE_LOG_ADDRESS,
       [{ denom: 'uinit', amount: MEMO_DUST_UINIT }],
