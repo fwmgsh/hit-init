@@ -1416,6 +1416,7 @@
         <button class="over-btn" id="restart-btn">PLAY AGAIN</button>
         <button class="over-btn home" id="home-btn">HOME</button>
       </div>
+      <button class="over-btn" id="save-score-btn" style="display:none;margin-top:10px;width:80%;background:#1ec0ff;color:#0c1a2e;border:none;border-radius:8px;padding:10px 0;font-weight:900;letter-spacing:0.05em;cursor:pointer;">SAVE SCORE ON-CHAIN</button>
     </div>
   </div>
 
@@ -2203,6 +2204,47 @@
       goToTitle();
     });
   }
+  // SAVE SCORE button (game-over screen) — manual recordScore TX so Keplr
+  // popups only happen on explicit user intent.
+  const saveScoreBtn = document.getElementById('save-score-btn');
+  if (saveScoreBtn) {
+    saveScoreBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!game.wallet) { showToast('Connect a wallet first'); return; }
+      saveScoreBtn.disabled = true;
+      saveScoreBtn.textContent = 'WAITING FOR WALLET…';
+      const s = Number(game.score) || 0;
+      const ab = Number(game.atBat) || 0;
+      const hrs = (game.stats && Number(game.stats.hrs)) || 0;
+      try {
+        const res = await recordScore(s, ab, hrs);
+        if (res && res.code && res.code !== 0) {
+          showToast('Score TX failed', 6000);
+          saveScoreBtn.textContent = 'TRY AGAIN';
+          saveScoreBtn.disabled = false;
+          return;
+        }
+        showToast('Score saved on-chain ✓');
+        saveScoreBtn.textContent = 'SAVED ✓';
+        refreshWalletPill();
+      } catch (err) {
+        if (isTxAlreadyCachedError(err)) {
+          showToast('Score saved on-chain ✓');
+          saveScoreBtn.textContent = 'SAVED ✓';
+          refreshWalletPill();
+          return;
+        }
+        if (/reject(ed)?/i.test((err && err.message) || '')) {
+          showToast('Score not saved (cancelled)');
+        } else {
+          console.warn('[saveScore] failed', err);
+          showToast(txErrorMessage(err), 8000);
+        }
+        saveScoreBtn.textContent = 'TRY AGAIN';
+        saveScoreBtn.disabled = false;
+      }
+    });
+  }
   walletBtn.addEventListener('click', (e) => { e.stopPropagation(); walletModal.classList.add('show'); });
   walletCancel.addEventListener('click', () => walletModal.classList.remove('show'));
   walletModal.addEventListener('click', (e) => {
@@ -2946,35 +2988,14 @@
   // (Previously deferred 250 ms to feel "punctuated" — user wants it instant.)
   function gameOver() {
     showGameOver();
-    // Fire-and-forget score memo TX. Only attempts if a wallet is connected;
-    // otherwise the offline player just sees the game-over screen.
-    if (game.wallet) {
-      const s = Number(game.score) || 0;
-      const ab = Number(game.atBat) || 0;
-      const hrs = (game.stats && Number(game.stats.hrs)) || 0;
-      showToast('Save score on-chain — confirm in wallet…', 6000);
-      recordScore(s, ab, hrs).then(res => {
-        if (res && res.code && res.code !== 0) {
-          showToast('Score TX failed');
-          return;
-        }
-        showToast('Score saved on-chain ✓');
-        refreshWalletPill();   // re-fetch balance after dust + gas
-      }).catch(err => {
-        if (isTxAlreadyCachedError(err)) {
-          // First broadcast already in mempool — actually saved.
-          showToast('Score saved on-chain ✓');
-          refreshWalletPill();
-          return;
-        }
-        console.warn('[recordScore] failed', err);
-        // Cancelling the score TX shouldn't be alarming — just inform.
-        if (/reject(ed)?/i.test((err && err.message) || '')) {
-          showToast('Score not saved (cancelled)');
-        } else {
-          showToast(txErrorMessage(err), 8000);
-        }
-      });
+    // Manual score recording: show the SAVE SCORE button (wallet only).
+    // The old fire-and-forget recordScore was queuing Keplr popups that
+    // sometimes froze the extension UI.
+    const saveBtn = document.getElementById('save-score-btn');
+    if (saveBtn) {
+      saveBtn.style.display = game.wallet ? '' : 'none';
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'SAVE SCORE ON-CHAIN';
     }
   }
   // Kept as a no-op so existing callers stay valid.
