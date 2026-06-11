@@ -2159,11 +2159,28 @@
   });
 
   startBtn.addEventListener('click', (e) => { e.stopPropagation(); unlockAudio(); attemptStart(); });
-  restartBtn.addEventListener('click', (e) => {
+  restartBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     unlockAudio();
-    // PLAY AGAIN — deduct a coin and start a new game directly.
-    // Wallet not required; only coins matter.
+    // PLAY AGAIN — same flow as 1P START on the title (wallet TX or legacy coin).
+    if (game.wallet) {
+      showToast('Confirm 1 INIT in wallet…', 6000);
+      try {
+        const res = await chargeForGame();
+        if (res && res.code && res.code !== 0) {
+          showToast('TX failed: ' + (res.rawLog || 'unknown').slice(0, 80));
+          return;
+        }
+        showToast('Paid 1 INIT — play ball!');
+        overScreen.classList.add('hidden');
+        refreshWalletPill();
+        startGame();
+      } catch (err) {
+        console.warn('[charge] failed', err);
+        showToast(txErrorMessage(err));
+      }
+      return;
+    }
     if (game.coins < 1) { goToTitle(); showToast('Not enough coins'); return; }
     overScreen.classList.add('hidden');
     game.coins -= 1;
@@ -2392,9 +2409,93 @@
     toastEl._t = setTimeout(() => toastEl.classList.remove('show'), ms);
   }
 
-  function attemptStart() {
-    // Wallet is optional — players can start without connecting. The wallet
-    // pill / coins still work if they do connect.
+  // ============================================================
+  //   REAL INIT TRANSACTIONS (Initia testnet)
+  // ============================================================
+  // Treasury + score log addresses — both point at the operator's testnet
+  // wallet for now (self-send while developing, so INIT isn't actually
+  // burned, only gas is). Split into separate addresses before mainnet.
+  const TREASURY_ADDRESS  = 'init1ap7crqv02ulaatmzzsdcnawq2ayr2tlr9uvvms';
+  const SCORE_LOG_ADDRESS = 'init1ap7crqv02ulaatmzzsdcnawq2ayr2tlr9uvvms';
+  const GAME_COST_UINIT   = '1000000';   // 1 INIT per game start
+  const MEMO_DUST_UINIT   = '1';         // 1 uinit dust carrying the score memo
+
+  // Lazy-load @cosmjs/stargate from esm.sh the first time we need to sign.
+  let _stargateLib = null;
+  async function getStargateLib() {
+    if (!_stargateLib) {
+      _stargateLib = await import('https://esm.sh/@cosmjs/stargate@0.32.4');
+    }
+    return _stargateLib;
+  }
+
+  async function getSigningClient() {
+    const keplr = getKeplr();
+    if (!keplr) throw new Error('Wallet extension not installed');
+    await keplr.enable(INITIA_CHAIN_ID);
+    const signer = keplr.getOfflineSigner(INITIA_CHAIN_ID);
+    const { SigningStargateClient, GasPrice } = await getStargateLib();
+    return SigningStargateClient.connectWithSigner(INITIA_RPC, signer, {
+      gasPrice: GasPrice.fromString('0.015uinit'),
+    });
+  }
+
+  // Sends 1 INIT from the connected wallet to TREASURY. Resolves with the
+  // tx result; throws on rejection or network failure.
+  async function chargeForGame() {
+    if (!game.wallet) throw new Error('Wallet not connected');
+    const client = await getSigningClient();
+    return client.sendTokens(
+      game.wallet, TREASURY_ADDRESS,
+      [{ denom: 'uinit', amount: GAME_COST_UINIT }],
+      'auto',
+      'Hit Init: game start'
+    );
+  }
+
+  // Sends 1 uinit dust + memo encoding the final score to SCORE_LOG. The
+  // transaction history at SCORE_LOG is the on-chain leaderboard source.
+  async function recordScore(score, atbats, hrs) {
+    if (!game.wallet) throw new Error('Wallet not connected');
+    const client = await getSigningClient();
+    const memo = `HIT_INIT:score=${score}:atbats=${atbats}:hrs=${hrs}:t=${Math.floor(Date.now()/1000)}`;
+    return client.sendTokens(
+      game.wallet, SCORE_LOG_ADDRESS,
+      [{ denom: 'uinit', amount: MEMO_DUST_UINIT }],
+      'auto',
+      memo
+    );
+  }
+
+  function txErrorMessage(e) {
+    const msg = (e && e.message) || String(e || '');
+    if (/reject(ed)?/i.test(msg)) return 'Transaction cancelled';
+    if (/insufficient/i.test(msg)) return 'Not enough INIT';
+    return 'TX error: ' + msg.slice(0, 80);
+  }
+
+  async function attemptStart() {
+    // Two flows: with a connected Initia wallet (real 1 INIT TX) or without
+    // (legacy local game-coin deduction). The local fallback keeps the demo
+    // playable for visitors who don't have Keplr.
+    if (game.wallet) {
+      showToast('Confirm 1 INIT in wallet…', 6000);
+      try {
+        const res = await chargeForGame();
+        if (res && res.code && res.code !== 0) {
+          showToast('TX failed: ' + (res.rawLog || 'unknown').slice(0, 80));
+          return;
+        }
+        showToast('Paid 1 INIT — play ball!');
+        refreshWalletPill();   // re-fetch balance after charge
+        startGame();
+      } catch (e) {
+        console.warn('[charge] failed', e);
+        showToast(txErrorMessage(e));
+      }
+      return;
+    }
+    // Legacy offline mode
     if (game.coins < 1) { showToast('Not enough coins'); return; }
     game.coins -= 1;
     persistCoins();
@@ -2807,6 +2908,30 @@
   // (Previously deferred 250 ms to feel "punctuated" — user wants it instant.)
   function gameOver() {
     showGameOver();
+    // Fire-and-forget score memo TX. Only attempts if a wallet is connected;
+    // otherwise the offline player just sees the game-over screen.
+    if (game.wallet) {
+      const s = Number(game.score) || 0;
+      const ab = Number(game.atBat) || 0;
+      const hrs = (game.stats && Number(game.stats.hrs)) || 0;
+      showToast('Save score on-chain — confirm in wallet…', 6000);
+      recordScore(s, ab, hrs).then(res => {
+        if (res && res.code && res.code !== 0) {
+          showToast('Score TX failed');
+          return;
+        }
+        showToast('Score saved on-chain ✓');
+        refreshWalletPill();   // re-fetch balance after dust + gas
+      }).catch(err => {
+        console.warn('[recordScore] failed', err);
+        // Cancelling the score TX shouldn't be alarming — just inform.
+        if (/reject(ed)?/i.test((err && err.message) || '')) {
+          showToast('Score not saved (cancelled)');
+        } else {
+          showToast(txErrorMessage(err));
+        }
+      });
+    }
   }
   // Kept as a no-op so existing callers stay valid.
   function cancelPendingGameOver() { /* no pending timer anymore */ }
