@@ -2988,14 +2988,58 @@
   // (Previously deferred 250 ms to feel "punctuated" — user wants it instant.)
   function gameOver() {
     showGameOver();
-    // Manual score recording: show the SAVE SCORE button (wallet only).
-    // The old fire-and-forget recordScore was queuing Keplr popups that
-    // sometimes froze the extension UI.
     const saveBtn = document.getElementById('save-score-btn');
     if (saveBtn) {
       saveBtn.style.display = game.wallet ? '' : 'none';
       saveBtn.disabled = false;
       saveBtn.textContent = 'SAVE SCORE ON-CHAIN';
+    }
+    // Auto-fire score TX after a short delay so the previous (game-start)
+    // TX has time to settle. The SAVE SCORE button stays as a backup if
+    // this auto-fire fails — user can click it to retry.
+    if (game.wallet) {
+      setTimeout(() => { autoSaveScore(); }, 600);
+    }
+  }
+
+  // Auto-attempt the same flow the SAVE SCORE button uses. Errors leave the
+  // button enabled so the player can retry manually.
+  async function autoSaveScore() {
+    const saveBtn = document.getElementById('save-score-btn');
+    if (!game.wallet || !saveBtn) return;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'SAVING…';
+    showToast('Save score on-chain — confirm in wallet…', 6000);
+    const s = Number(game.score) || 0;
+    const ab = Number(game.atBat) || 0;
+    const hrs = (game.stats && Number(game.stats.hrs)) || 0;
+    try {
+      const res = await recordScore(s, ab, hrs);
+      if (res && res.code && res.code !== 0) {
+        showToast('Score TX failed', 6000);
+        saveBtn.textContent = 'TRY AGAIN';
+        saveBtn.disabled = false;
+        return;
+      }
+      showToast('Score saved on-chain ✓');
+      saveBtn.textContent = 'SAVED ✓';
+      refreshWalletPill();
+    } catch (err) {
+      if (isTxAlreadyCachedError(err)) {
+        showToast('Score saved on-chain ✓');
+        saveBtn.textContent = 'SAVED ✓';
+        refreshWalletPill();
+        return;
+      }
+      if (/reject(ed)?/i.test((err && err.message) || '')) {
+        showToast('Score not saved (cancelled)');
+        saveBtn.textContent = 'SAVE SCORE ON-CHAIN';
+      } else {
+        console.warn('[autoSaveScore] failed', err);
+        showToast(txErrorMessage(err), 8000);
+        saveBtn.textContent = 'TRY AGAIN';
+      }
+      saveBtn.disabled = false;
     }
   }
   // Kept as a no-op so existing callers stay valid.
