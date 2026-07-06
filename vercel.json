@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/sign-score.js": {
+      "maxDuration": 10
+    }
+  }
+}

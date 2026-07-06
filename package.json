@@ -1,0 +1,10 @@
+{
+  "name": "hit-init-api",
+  "version": "1.0.0",
+  "description": "Serverless score signer for Hit Init",
+  "type": "module",
+  "dependencies": {
+    "@noble/secp256k1": "2.1.0",
+    "@noble/hashes": "1.4.0"
+  }
+}
