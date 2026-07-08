@@ -2474,6 +2474,11 @@
   const SCORE_LOG_ADDRESS = 'init1hxgp595lwvxpaxrh5aarejmmj23nsfl6kahl7z';
   const GAME_COST_UINIT   = '1000000';   // 1 INIT per game start
   const MEMO_DUST_UINIT   = '1';         // 1 uinit dust carrying the score memo
+  // Score signing service (Vercel Function). Backend validates bounds and
+  // returns a secp256k1 signature over the canonical payload — the leaderboard
+  // only counts memos that carry a valid signature, so a raw `HIT_INIT:s=999`
+  // tx sent directly to SCORE_LOG_ADDRESS is ignored.
+  const SCORE_SIGN_API    = 'https://hit-init.vercel.app/api/sign-score';
 
   // Lazy-load @cosmjs/stargate from esm.sh the first time we need to sign.
   // `?bundle-deps` is required: without it esm.sh leaves libsodium-wrappers
@@ -2511,16 +2516,40 @@
     );
   }
 
-  // Sends 1 uinit dust + memo encoding the final score to SCORE_LOG. The
-  // transaction history at SCORE_LOG is the on-chain leaderboard source.
+  // Ask the Vercel signer to bless the score. Backend bounds-checks the
+  // payload then returns a secp256k1 signature over
+  //   HIT_INIT_v1|w=<wallet>|s=<score>|a=<atbats>|h=<hrs>|t=<t>|n=<nonce>
+  async function requestScoreSignature({ score, atbats, hrs, wallet, nonce, t }) {
+    const r = await fetch(SCORE_SIGN_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ score, atbats, hrs, wallet, nonce, t }),
+    });
+    if (!r.ok) {
+      let msg = 'sign HTTP ' + r.status;
+      try { const j = await r.json(); if (j && j.error) msg = 'sign: ' + j.error; } catch (_) {}
+      throw new Error(msg);
+    }
+    const j = await r.json();
+    if (!j || !j.signature) throw new Error('sign: no signature');
+    return j.signature;
+  }
+
+  // Sends 1 uinit dust + a *signed* memo encoding the final score to
+  // SCORE_LOG. The transaction history at SCORE_LOG is the on-chain
+  // leaderboard source; the leaderboard verifies the signature so a raw
+  // forged memo TX is ignored.
   async function recordScore(score, atbats, hrs) {
     if (!game.wallet) throw new Error('Wallet not connected');
+    // Seconds timestamp (matches backend freshness window). Random nonce
+    // keeps memos + tx hashes unique between calls in the same second.
+    const t = Math.floor(Date.now() / 1000);
+    const nonce = Math.floor(Math.random() * 1e9).toString(36);
+    const signature = await requestScoreSignature({
+      score, atbats, hrs, wallet: game.wallet, nonce, t,
+    });
+    const memo = `HIT_INIT:s=${score}:a=${atbats}:h=${hrs}:t=${t}:n=${nonce}:sig=${signature}`;
     const client = await getSigningClient();
-    // Milliseconds (not seconds) + random nonce so two recordScore calls in
-    // the same second never produce identical memos — and therefore never
-    // collide on the same tx hash ("tx already exists in cache" rejection).
-    const nonce = Math.floor(Math.random() * 1e6).toString(36);
-    const memo = `HIT_INIT:score=${score}:atbats=${atbats}:hrs=${hrs}:t=${Date.now()}:n=${nonce}`;
     return client.sendTokens(
       game.wallet, SCORE_LOG_ADDRESS,
       [{ denom: 'uinit', amount: MEMO_DUST_UINIT }],
